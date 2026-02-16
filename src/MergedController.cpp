@@ -82,17 +82,9 @@ vr::EVRInitError MergedController::Activate(uint32_t unObjectId) {
     // ── Create input components ────────────────────────────────────────
     auto input = vr::VRDriverInput();
 
-    // Face buttons
-    if (m_hand == 0) {
-        input->CreateBooleanComponent(container, "/input/x/click", &m_hBtnPrimary);
-        input->CreateBooleanComponent(container, "/input/y/click", &m_hBtnSecondary);
-    } else {
-        input->CreateBooleanComponent(container, "/input/a/click", &m_hBtnPrimary);
-        input->CreateBooleanComponent(container, "/input/b/click", &m_hBtnSecondary);
-    }
-
-    // Bumper
-    //input->CreateBooleanComponent(container, "/input/bumper/click", &m_hBtnBumper);
+    // Face buttons — A and B on both hands (same as Quest)
+    input->CreateBooleanComponent(container, "/input/a/click", &m_hBtnA);
+    input->CreateBooleanComponent(container, "/input/b/click", &m_hBtnB);
 
     // Joystick
     input->CreateScalarComponent(container, "/input/joystick/x",
@@ -217,12 +209,9 @@ void MergedController::UpdateInputs() {
         bool btnJoyClick   = (gp.buttons & 0x08) != 0;
         bool btnA          = (gp.buttons & 0x10) != 0;
 
-        // SteamVR mapping:
-        //   Primary   = A (right) / X (left)  <- A (bit4)
-        //   Secondary = B (right) / Y (left)  <- B (bit2)
-        input->UpdateBooleanComponent(m_hBtnPrimary,    btnA,        0.0);
-        input->UpdateBooleanComponent(m_hBtnSecondary,  btnB,        0.0);
-        input->UpdateBooleanComponent(m_hBtnBumper,     false,       0.0);
+        // SteamVR mapping: A/B on both hands
+        input->UpdateBooleanComponent(m_hBtnA,          btnA,        0.0);
+        input->UpdateBooleanComponent(m_hBtnB,          btnB,        0.0);
         input->UpdateBooleanComponent(m_hJoyClick,      btnJoyClick, 0.0);
 
         // Joystick: normalize from int16 (-32767..32767) to float (-1..1)
@@ -240,10 +229,9 @@ void MergedController::UpdateInputs() {
         input->UpdateScalarComponent(m_hGrip,    btnGrip ? 1.0f : 0.0f, 0.0);
     } else {
         // No gamepad data — zero everything
-        input->UpdateBooleanComponent(m_hBtnPrimary,   false, 0.0);
-        input->UpdateBooleanComponent(m_hBtnSecondary,  false, 0.0);
-        input->UpdateBooleanComponent(m_hBtnBumper,     false, 0.0);
-        input->UpdateBooleanComponent(m_hJoyClick,      false, 0.0);
+        input->UpdateBooleanComponent(m_hBtnA,      false, 0.0);
+        input->UpdateBooleanComponent(m_hBtnB,      false, 0.0);
+        input->UpdateBooleanComponent(m_hJoyClick,  false, 0.0);
         input->UpdateScalarComponent(m_hJoyX,    0.f, 0.0);
         input->UpdateScalarComponent(m_hJoyY,    0.f, 0.0);
         input->UpdateScalarComponent(m_hTrigger, 0.f, 0.0);

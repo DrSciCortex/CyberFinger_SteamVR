@@ -56,9 +56,8 @@ private:
     SkeletonComposer       m_skeletonComposer;
 
     // Input component handles
-    vr::VRInputComponentHandle_t m_hBtnPrimary   = vr::k_ulInvalidInputComponentHandle;
-    vr::VRInputComponentHandle_t m_hBtnSecondary  = vr::k_ulInvalidInputComponentHandle;
-    vr::VRInputComponentHandle_t m_hBtnBumper     = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t m_hBtnA          = vr::k_ulInvalidInputComponentHandle;
+    vr::VRInputComponentHandle_t m_hBtnB          = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t m_hJoyX          = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t m_hJoyY          = vr::k_ulInvalidInputComponentHandle;
     vr::VRInputComponentHandle_t m_hJoyClick      = vr::k_ulInvalidInputComponentHandle;

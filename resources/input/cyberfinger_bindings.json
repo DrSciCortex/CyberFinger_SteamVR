@@ -3,14 +3,14 @@
         "/actions/default": {
             "sources": [
                 {
-                    "path": "/user/hand/left/input/x",
+                    "path": "/user/hand/left/input/a",
                     "mode": "button",
                     "inputs": {
                         "click": { "output": "/actions/default/in/InteractUI" }
                     }
                 },
                 {
-                    "path": "/user/hand/left/input/y",
+                    "path": "/user/hand/left/input/b",
                     "mode": "button",
                     "inputs": {
                         "click": { "output": "/actions/default/in/Teleport" }
