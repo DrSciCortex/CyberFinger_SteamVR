@@ -147,6 +147,15 @@ void HandTrackingReceiver::ProcessPacket(const HandTrackingPacket& pkt) {
     state.timestamp = NowSeconds();
     state.confidence = pkt.confidence / 255.f;
 
+    // Log first packet per hand
+    static bool firstHT[2] = {false, false};
+    int h = (pkt.hand == 0) ? 0 : 1;
+    if (!firstHT[h]) {
+        firstHT[h] = true;
+        DriverLog("HandTrackingReceiver: First HT packet for %s hand! pos=(%.3f,%.3f,%.3f) conf=%d\n",
+                  h == 0 ? "LEFT" : "RIGHT", pkt.pos[0], pkt.pos[1], pkt.pos[2], pkt.confidence);
+    }
+
     state.pos[0] = pkt.pos[0];
     state.pos[1] = pkt.pos[1];
     state.pos[2] = pkt.pos[2];
