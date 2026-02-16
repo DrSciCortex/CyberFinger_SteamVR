@@ -1,0 +1,81 @@
+{
+    "bindings": {
+        "/actions/default": {
+            "sources": [
+                {
+                    "path": "/user/hand/left/input/x",
+                    "mode": "button",
+                    "inputs": {
+                        "click": { "output": "/actions/default/in/InteractUI" }
+                    }
+                },
+                {
+                    "path": "/user/hand/left/input/y",
+                    "mode": "button",
+                    "inputs": {
+                        "click": { "output": "/actions/default/in/Teleport" }
+                    }
+                },
+                {
+                    "path": "/user/hand/right/input/a",
+                    "mode": "button",
+                    "inputs": {
+                        "click": { "output": "/actions/default/in/InteractUI" }
+                    }
+                },
+                {
+                    "path": "/user/hand/right/input/b",
+                    "mode": "button",
+                    "inputs": {
+                        "click": { "output": "/actions/default/in/Teleport" }
+                    }
+                },
+                {
+                    "path": "/user/hand/left/input/joystick",
+                    "mode": "joystick",
+                    "inputs": {
+                        "position": { "output": "/actions/default/in/Move" }
+                    }
+                },
+                {
+                    "path": "/user/hand/right/input/joystick",
+                    "mode": "joystick",
+                    "inputs": {
+                        "position": { "output": "/actions/default/in/Look" }
+                    }
+                },
+                {
+                    "path": "/user/hand/left/input/bumper",
+                    "mode": "button",
+                    "inputs": {
+                        "click": { "output": "/actions/default/in/GrabGrip" }
+                    }
+                },
+                {
+                    "path": "/user/hand/right/input/bumper",
+                    "mode": "button",
+                    "inputs": {
+                        "click": { "output": "/actions/default/in/GrabGrip" }
+                    }
+                },
+                {
+                    "path": "/user/hand/left/input/skeleton/left",
+                    "mode": "skeleton",
+                    "inputs": {
+                        "skeleton": { "output": "/actions/default/in/SkeletonLeftHand" }
+                    }
+                },
+                {
+                    "path": "/user/hand/right/input/skeleton/right",
+                    "mode": "skeleton",
+                    "inputs": {
+                        "skeleton": { "output": "/actions/default/in/SkeletonRightHand" }
+                    }
+                }
+            ]
+        }
+    },
+    "controller_type": "cyberfinger",
+    "description": "Default bindings for CyberFinger",
+    "name": "Default CyberFinger Bindings"
+}
