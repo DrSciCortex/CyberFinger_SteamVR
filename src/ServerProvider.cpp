@@ -22,8 +22,8 @@ vr::EVRInitError ServerProvider::Init(vr::IVRDriverContext* pDriverContext) {
     // ── Read settings ──────────────────────────────────────────────────
     const char* section = "driver_cyberfinger";
 
-    std::string serialL = GetDriverSettingString(section, "serialNumber_left", "MERGED_CTRL_L");
-    std::string serialR = GetDriverSettingString(section, "serialNumber_right", "MERGED_CTRL_R");
+    std::string serialL = GetDriverSettingString(section, "serialNumber_left", "CYBERFINGER_L");
+    std::string serialR = GetDriverSettingString(section, "serialNumber_right", "CYBERFINGER_R");
 
     int udpPort  = GetDriverSettingInt(section, "handtracking_udp_port", 27015);
 
