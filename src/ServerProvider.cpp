@@ -16,11 +16,11 @@ vr::EVRInitError ServerProvider::Init(vr::IVRDriverContext* pDriverContext) {
     VR_INIT_SERVER_DRIVER_CONTEXT(pDriverContext);
 
     SetDriverLog(vr::VRDriverLog());
-    DriverLog("═══ Merged Controller Driver v1.0 ═══\n");
+    DriverLog("═══ CyberFinger Driver v1.0 ═══\n");
     DriverLog("Initializing...\n");
 
     // ── Read settings ──────────────────────────────────────────────────
-    const char* section = "driver_merged_controller";
+    const char* section = "driver_cyberfinger";
 
     std::string serialL = GetDriverSettingString(section, "serialNumber_left", "MERGED_CTRL_L");
     std::string serialR = GetDriverSettingString(section, "serialNumber_right", "MERGED_CTRL_R");

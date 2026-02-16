@@ -48,9 +48,9 @@ vr::EVRInitError MergedController::Activate(uint32_t unObjectId) {
 
     // ── Device properties ──────────────────────────────────────────────
     props->SetStringProperty(container, vr::Prop_SerialNumber_String, m_serial.c_str());
-    props->SetStringProperty(container, vr::Prop_ModelNumber_String, "MergedController");
-    props->SetStringProperty(container, vr::Prop_ManufacturerName_String, "MergedCtrl");
-    props->SetStringProperty(container, vr::Prop_TrackingSystemName_String, "merged_controller");
+    props->SetStringProperty(container, vr::Prop_ModelNumber_String, "CyberFinger");
+    props->SetStringProperty(container, vr::Prop_ManufacturerName_String, "SciCortex");
+    props->SetStringProperty(container, vr::Prop_TrackingSystemName_String, "cyberfinger");
 
     props->SetInt32Property(container, vr::Prop_DeviceClass_Int32,
                             vr::TrackedDeviceClass_Controller);
@@ -60,11 +60,11 @@ vr::EVRInitError MergedController::Activate(uint32_t unObjectId) {
 
     // Input profile
     props->SetStringProperty(container, vr::Prop_InputProfilePath_String,
-        "{merged_controller}/input/merged_controller_profile.json");
+        "{cyberfinger}/input/cyberfinger_profile.json");
 
     // Controller type (used for binding UI)
     props->SetStringProperty(container, vr::Prop_ControllerType_String,
-        "merged_controller");
+        "cyberfinger");
 
     // Render model — use SteamVR's built-in generic controller models
     // (or use hand skeleton rendering which doesn't need a render model)
@@ -77,7 +77,7 @@ vr::EVRInitError MergedController::Activate(uint32_t unObjectId) {
     // Firmware / hardware version (avoids warnings)
     props->SetUint64Property(container, vr::Prop_HardwareRevision_Uint64, 1);
     props->SetUint64Property(container, vr::Prop_FirmwareVersion_Uint64, 1);
-    props->SetStringProperty(container, vr::Prop_ResourceRoot_String, "merged_controller");
+    props->SetStringProperty(container, vr::Prop_ResourceRoot_String, "cyberfinger");
 
     // ── Create input components ────────────────────────────────────────
     auto input = vr::VRDriverInput();

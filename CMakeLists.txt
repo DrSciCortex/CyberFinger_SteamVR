@@ -118,24 +118,38 @@ add_custom_command(TARGET driver_cyberfinger POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_SOURCE_DIR}/resources/input/cyberfinger_bindings.json"
         "${DRIVER_DIR}/resources/input/cyberfinger_bindings.json"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${DRIVER_DIR}/resources/icons"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/resources/icons"
+        "${DRIVER_DIR}/resources/icons"
     COMMENT "Copying driver resources to ${DRIVER_DIR}"
 )
 
-# ── Install driver layout ──────────────────────────────────────────────────
+# ── Install: deploy to SteamVR drivers directory ──────────────────────────
+# Usage:  cmake --install . --prefix "C:/Program Files (x86)/Steam/steamapps/common/SteamVR/drivers"
+# Or set CMAKE_INSTALL_PREFIX in CMake settings / CMakePresets.json
+
+set(DRIVER_INSTALL_NAME "cyberfinger" CACHE STRING "Driver folder name in SteamVR/drivers")
+
 install(TARGETS driver_cyberfinger
-    RUNTIME DESTINATION driver/cyberfinger/bin/win64
-    LIBRARY DESTINATION driver/cyberfinger/bin/linux64
+    RUNTIME DESTINATION ${DRIVER_INSTALL_NAME}/bin/win64
+    LIBRARY DESTINATION ${DRIVER_INSTALL_NAME}/bin/linux64
 )
 
 install(FILES
     resources/driver.vrdrivermanifest
-    DESTINATION driver/cyberfinger
+    DESTINATION ${DRIVER_INSTALL_NAME}
 )
 
 install(DIRECTORY resources/settings/
-    DESTINATION driver/cyberfinger/resources/settings
+    DESTINATION ${DRIVER_INSTALL_NAME}/resources/settings
 )
 
 install(DIRECTORY resources/input/
-    DESTINATION driver/cyberfinger/resources/input
+    DESTINATION ${DRIVER_INSTALL_NAME}/resources/input
+)
+
+install(DIRECTORY resources/icons/
+    DESTINATION ${DRIVER_INSTALL_NAME}/resources/icons
 )

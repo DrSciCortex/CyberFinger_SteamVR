@@ -1,14 +1,11 @@
 {
     "driver_cyberfinger": {
         "enable": true,
-        "serialNumber_left": "MERGED_CTRL_L",
-        "serialNumber_right": "MERGED_CTRL_R",
+        "serialNumber_left": "CYBERFINGER_L",
+        "serialNumber_right": "CYBERFINGER_R",
 
         "handtracking_udp_port": 27015,
         "handtracking_source": "auto",
-
-        "skeleton_blend_authority": "handtracking",
-        "button_curl_threshold": 0.7,
 
         "pose_offset_x": 0.0,
         "pose_offset_y": 0.0,
