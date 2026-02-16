@@ -92,7 +92,7 @@ vr::EVRInitError MergedController::Activate(uint32_t unObjectId) {
     }
 
     // Bumper
-    input->CreateBooleanComponent(container, "/input/bumper/click", &m_hBtnBumper);
+    //input->CreateBooleanComponent(container, "/input/bumper/click", &m_hBtnBumper);
 
     // Joystick
     input->CreateScalarComponent(container, "/input/joystick/x",
