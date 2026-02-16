@@ -244,6 +244,19 @@ void MergedController::UpdateInputs() {
 void MergedController::UpdatePose() {
     bool hasTracking = m_handTracking->HasRecentData(m_hand, 0.15);
 
+    // Debug: log tracking state periodically
+    static int poseLogCount[2] = {0, 0};
+    if (++poseLogCount[m_hand] % 180 == 0) {
+        if (hasTracking) {
+            HandTrackingState ht = (m_hand == 0) ? m_handTracking->GetLeft()
+                                                 : m_handTracking->GetRight();
+            DriverLog("[%s] POSE: tracking=YES pos=(%.3f,%.3f,%.3f) conf=%.2f\n",
+                      m_serial.c_str(), ht.pos[0], ht.pos[1], ht.pos[2], ht.confidence);
+        } else {
+            DriverLog("[%s] POSE: tracking=NO (using fallback)\n", m_serial.c_str());
+        }
+    }
+
     if (hasTracking) {
         HandTrackingState ht = (m_hand == 0) ? m_handTracking->GetLeft()
                                              : m_handTracking->GetRight();
@@ -252,10 +265,8 @@ void MergedController::UpdatePose() {
         m_pose.deviceIsConnected = true;
         m_pose.result = vr::TrackingResult_Running_OK;
 
-        // Hand tracking provides position in HMD-relative space
-        // The driver needs to report in standing/raw tracking space.
-        // We set the driver-from-head transform to identity and let SteamVR
-        // handle the HMD-relative → world transform.
+        // Pose from bridge is in absolute standing space.
+        // WorldFromDriver = identity, so vecPosition is in world/standing space.
         m_pose.vecPosition[0] = ht.pos[0];
         m_pose.vecPosition[1] = ht.pos[1];
         m_pose.vecPosition[2] = ht.pos[2];

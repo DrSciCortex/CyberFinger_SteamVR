@@ -165,7 +165,7 @@ static int g_noController[2] = {0, 0};
 static void PollTrackedDeviceHands() {
     g_pollCount++;
 
-    // Get all poses at once
+    // Get all poses at once in standing (absolute) space
     vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
     vr::VRSystem()->GetDeviceToAbsoluteTrackingPose(
         vr::TrackingUniverseStanding, 0.f, poses, vr::k_unMaxTrackedDeviceCount);
@@ -185,13 +185,13 @@ static void PollTrackedDeviceHands() {
         if (!poses[devIdx].bPoseIsValid)
             continue;
 
-        // Extract position and rotation from the 3x4 matrix
+        // Extract absolute position and rotation from the 3x4 matrix
         const auto& mat = poses[devIdx].mDeviceToAbsoluteTracking.m;
         float px = mat[0][3], py = mat[1][3], pz = mat[2][3];
         float qw, qx, qy, qz;
         MatToQuat(mat, qw, qx, qy, qz);
 
-        // Build packet
+        // Build packet — positions in absolute standing space
         HandTrackingPacket pkt{};
         pkt.magic = kMagic;
         pkt.version = 1;
