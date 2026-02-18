@@ -5,7 +5,10 @@
         "serialNumber_right": "CYBERFINGER_R",
 
         "handtracking_udp_port": 27015,
-        "handtracking_source": "auto",
+
+        "grip_angle_x": -60.0,
+        "grip_angle_y": 0.0,
+        "grip_angle_z": 0.0,
 
         "pose_offset_x": 0.0,
         "pose_offset_y": 0.0,

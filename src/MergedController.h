@@ -16,6 +16,7 @@
 #include <openvr_driver.h>
 #include <string>
 #include <array>
+#include <chrono>
 #include "BoneData.h"
 #include "HandTrackingReceiver.h"
 #include "SkeletonComposer.h"
@@ -47,10 +48,12 @@ private:
     void UpdateInputs();
     void UpdatePose();
     void UpdateSkeleton();
+    vr::TrackedDeviceIndex_t FindSourceDevice();
 
     int                    m_hand;          // 0=left, 1=right
     std::string            m_serial;
     uint32_t               m_objectId = vr::k_unTrackedDeviceIndexInvalid;
+    vr::TrackedDeviceIndex_t m_sourceDeviceIdx = vr::k_unTrackedDeviceIndexInvalid;
 
     HandTrackingReceiver*  m_handTracking = nullptr;
     SkeletonComposer       m_skeletonComposer;
@@ -72,6 +75,12 @@ private:
 
     // Cached pose
     vr::DriverPose_t m_pose;
+
+    float m_gripAx = -60.f, m_gripAy = 0.f, m_gripAz = 0.f;
+    float m_offX = 0.f, m_offY = 0.f, m_offZ = 0.f;
+    std::chrono::steady_clock::time_point m_lastSettingsPoll;
+    void PollSettingsIfNeeded();
+
 };
 
 } // namespace merged_ctrl

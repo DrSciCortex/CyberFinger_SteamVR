@@ -110,6 +110,9 @@ add_custom_command(TARGET driver_cyberfinger POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_SOURCE_DIR}/resources/settings/default.vrsettings"
         "${DRIVER_DIR}/resources/settings/default.vrsettings"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_SOURCE_DIR}/resources/settings/settingsschema.vrsettings"
+        "${DRIVER_DIR}/resources/settings/settingsschema.vrsettings"
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${DRIVER_DIR}/resources/input"
     COMMAND ${CMAKE_COMMAND} -E copy
