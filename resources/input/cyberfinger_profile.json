@@ -14,27 +14,37 @@
     "input_source": {
         "/input/a": {
             "type": "button",
-            "binding_image_point": [0.5, 0.5],
+            "click": true,
+            "touch": false,
+            "binding_image_point": [ 100, 100 ],
             "order": 1
         },
         "/input/b": {
             "type": "button",
-            "binding_image_point": [0.5, 0.4],
+            "click": true,
+            "touch": false,
+            "binding_image_point": [ 200, 200 ],
             "order": 2
         },
         "/input/joystick": {
             "type": "joystick",
-            "binding_image_point": [0.5, 0.7],
+            "click": true,
+            "touch": false,
+            "binding_image_point": [ 100, 200 ],
             "order": 3
         },
         "/input/trigger": {
-            "type": "trigger",
-            "binding_image_point": [0.5, 0.3],
+            "type": "button",
+            "click": true,
+            "touch": false,
+            "binding_image_point": [ 200, 100 ],
             "order": 4
         },
         "/input/grip": {
-            "type": "trigger",
-            "binding_image_point": [0.5, 0.6],
+            "type": "button",
+            "click": true,
+            "touch": false,
+            "binding_image_point": [ 50, 50 ],
             "order": 5
         },
         "/input/skeleton/left": {

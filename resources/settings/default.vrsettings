@@ -7,11 +7,11 @@
         "handtracking_udp_port": 27015,
 
         "grip_angle_x": -60.0,
-        "grip_angle_y": 0.0,
+        "grip_angle_y": 35.0,
         "grip_angle_z": 0.0,
 
         "pose_offset_x": 0.0,
-        "pose_offset_y": 0.0,
+        "pose_offset_y": -0.10,
         "pose_offset_z": 0.0
     }
 }

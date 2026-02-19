@@ -1,7 +1,7 @@
 # CyberFinger — SteamVR Driver
 
 A SteamVR driver that merges **two CyberFingers** + **hand tracking** into a pair of
-virtual VR controllers with full skeletal hand data.
+virtual VR controllers (soon with full skeletal hand data).
 
 ## Building
 
@@ -12,6 +12,7 @@ virtual VR controllers with full skeletal hand data.
 - [OpenVR SDK](https://github.com/ValveSoftware/openvr) — clone it into the
   project root as `openvr/`, or set `-DOPENVR_SDK=<path>`
 - Python WinRT
+- "steamvr" branch of the CyberFingerFW_ESP32 installed on CyberFingers : https://github.com/DrSciCortex/CyberFingerFW_ESP32/tree/steamvr 
 
 ```bash
 pip install winrt-Windows.Devices.Enumeration winrt-Windows.Devices.Bluetooth
@@ -31,6 +32,9 @@ mkdir build && cd build
 cmake .. -G "Visual Studio 17 2022" -A x64
 cmake --build . --config Release
 ```
+
+or just use Visual Studio to build. It should install automatically in the standard steam driver location. 
+
 
 ### Linux
 
@@ -62,6 +66,8 @@ Copy the built driver folder into SteamVR's driver directory:
         └── cyberfinger_controller.dll  (or .so)
 ```
 
+(That is, if Visual Studio didn't do it already for you above)
+
 ### 2. Enable the driver
 
 Add to `<Steam>/config/steamvr.vrsettings`:
@@ -70,17 +76,18 @@ Add to `<Steam>/config/steamvr.vrsettings`:
 "driver_cyberfinger": {
     "enable": true,
     "handtracking_udp_port": 27015
-}
+},
+
+"TrackingOverrides" : {
+  "/devices/cyberfinger/CYBERFINGER_L" : "/user/hand/left",
+  "/devices/cyberfinger/CYBERFINGER_R" : "/user/hand/right"
+},
 ```
 
-### 3. Run the hand tracking bridge and cyberfinger bridge
+### 3. Run the cyberfinger bridge
 
-```bash
-# Auto-detect (reads from SteamVR hand tracking, e.g. Quest via Link)
-./handtracking_bridge --source auto --port 27015
-```
+Under the bridge directory:
 
-and 
 ```bash
 python cyberfinger_bridge.py
 ```
@@ -91,6 +98,9 @@ Launch these *after* SteamVR is running but *before* your VR application.
 
 Make sure your cyberfinger is in "VR mode" where each hand communicates directly over BLE with the cyberfinger_bridge using a custom protocol, 
 not the legacy "Gamepad" mode (which has the two cyberfingers merged into one XInput device).
+Note VR mode is available only for the steamvr branch of the firmware:
+https://github.com/DrSciCortex/CyberFingerFW_ESP32/tree/steamvr
+This version must be installed on your CyberFingers, or the steamvr driver will not work.  
 
 ## Configuration
 
@@ -109,6 +119,7 @@ Both packet types are sent to `127.0.0.1:<port>` (default 27015) and distinguish
 
 ## Hand Tracking Packet (bridge → driver)
 
+(This bridge is not currently needed)
 Source: C++ hand tracking bridge (reads from OpenVR/Ultraleap).
 See `HandTrackingReceiver.h :: HandTrackingPacket`.
 
@@ -187,7 +198,7 @@ The project has three main components:
 2. **Hand Tracking Bridge** (`handtracking_bridge`): Standalone process that
    reads hand tracking data from SteamVR's input API (which receives it from
    Quest via Steam Link, or from Ultraleap's SteamVR plugin) and forwards it
-   over UDP localhost to the driver.
+   over UDP localhost to the driver. (not currently needed)
    
 3. **CyberFinger Bridge** (`cyberfinger_bridge.py`): Standalone process that 
    reads joystick and button events sent from the cyberfinger firmware 
