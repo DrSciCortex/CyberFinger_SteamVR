@@ -116,50 +116,123 @@ class CyberFingerBridge:
         from winrt.windows.devices.enumeration import DeviceInformation
         from winrt.windows.devices.bluetooth import BluetoothLEDevice, BluetoothConnectionStatus
 
-        print("[Bridge] Enumerating devices...")
+        print("[Bridge] ── BLE Discovery ──────────────────────────")
+        print("[Bridge] Enumerating system devices...")
         all_devices = await DeviceInformation.find_all_async()
+        print(f"[Bridge] Total system devices: {len(all_devices)}")
 
-        cf_ids = set()
+        # Pass 1: collect CyberFinger BLE device IDs with their enumeration names
+        # IMPORTANT: we keep the name from enumeration because from_id_async()
+        # returns a generic "Bluetooth XX:XX:XX..." name instead of the real
+        # advertised device name.
+        cf_ble_entries = []  # (enum_name, dev_id)
         for dev in all_devices:
             name = dev.name or ""
             dev_id = dev.id or ""
             if "cyberfinger" in name.lower() and "bthledevice" in dev_id.lower():
-                cf_ids.add(dev_id)
+                cf_ble_entries.append((name, dev_id))
 
-        seen = {}
-        for dev_id in cf_ids:
+        print(f"[Bridge] CyberFinger BLE entries: {len(cf_ble_entries)}")
+        if not cf_ble_entries:
+            print("[Bridge] No CyberFinger BLE devices in system list!")
+            print("[Bridge] Check: are they paired in Windows Bluetooth settings?")
+            return None, None
+
+        # Pass 2: open each to get MAC and connection status.
+        # Use the enumeration name (not ble_dev.name) for L/R matching.
+        # Deduplicate by MAC, keeping connected + first enum_name seen.
+        seen = {}  # mac -> (enum_name, connected, ble_dev)
+        for enum_name, dev_id in cf_ble_entries:
             try:
                 ble_dev = await BluetoothLEDevice.from_id_async(dev_id)
                 if not ble_dev:
                     continue
                 raw = ble_dev.bluetooth_address
                 mac = ":".join(f"{(raw >> (8*i)) & 0xFF:02X}" for i in range(5, -1, -1))
-                name = ble_dev.name or "?"
                 connected = (ble_dev.connection_status == BluetoothConnectionStatus.CONNECTED)
-                if mac not in seen or connected:
-                    seen[mac] = (name, connected, ble_dev)
+
+                if mac not in seen or (connected and not seen[mac][1]):
+                    seen[mac] = (enum_name, connected, ble_dev)
             except Exception:
                 pass
 
+        if not seen:
+            print("[Bridge] Could not open any CyberFinger BLE devices!")
+            return None, None
+
+        # Show unique devices
+        print(f"\n[Bridge] ── Unique devices: {len(seen)} ──")
+        for mac, (enum_name, connected, ble_dev) in sorted(seen.items()):
+            conn_str = "CONNECTED" if connected else "disconnected"
+            nl = enum_name.lower()
+            if "left" in nl:
+                lr_tag = "←LEFT"
+            elif "right" in nl:
+                lr_tag = "RIGHT→"
+            else:
+                lr_tag = "?UNKNOWN?"
+            print(f"[Bridge]   [{conn_str:>12}] [{lr_tag:>9}]  \"{enum_name}\"  {mac}")
+
+        # Filter to connected
+        connected_devs = [(mac, enum_name, ble_dev)
+                          for mac, (enum_name, connected, ble_dev) in seen.items()
+                          if connected]
+
+        if not connected_devs:
+            print("\n[Bridge] ERROR: No CONNECTED CyberFinger devices!")
+            print("[Bridge] Make sure ESP32s are powered on and in range.")
+            return None, None
+
+        print(f"[Bridge] Connected: {len(connected_devs)} device(s)")
+
+        # ── Assignment ──
         left_dev = right_dev = None
-        for mac, (name, connected, ble_dev) in seen.items():
-            if not connected:
-                continue
-            nl = name.lower()
+
+        # Priority 1: explicit --left / --right MAC
+        if left_mac or right_mac:
+            print(f"[Bridge] MAC overrides: --left={left_mac} --right={right_mac}")
+        for mac, enum_name, ble_dev in connected_devs:
             if left_mac and mac.upper() == left_mac.upper():
-                left_dev = (mac, name, ble_dev)
-                print(f"  LEFT:  {name}  ->  {mac}")
-            elif right_mac and mac.upper() == right_mac.upper():
-                right_dev = (mac, name, ble_dev)
-                print(f"  RIGHT: {name}  ->  {mac}")
-            elif not left_mac and "left" in nl and not left_dev:
-                left_dev = (mac, name, ble_dev)
-                print(f"  LEFT:  {name}  ->  {mac}")
-            elif not right_mac and "right" in nl and not right_dev:
-                right_dev = (mac, name, ble_dev)
-                print(f"  RIGHT: {name}  ->  {mac}")
-            if left_dev and right_dev:
-                break
+                left_dev = (mac, enum_name, ble_dev)
+                print(f"[Bridge]   LEFT  ← MAC match: \"{enum_name}\" {mac}")
+            if right_mac and mac.upper() == right_mac.upper():
+                right_dev = (mac, enum_name, ble_dev)
+                print(f"[Bridge]   RIGHT ← MAC match: \"{enum_name}\" {mac}")
+
+        # Priority 2: name-based (using enumeration name, not ble_dev.name)
+        for mac, enum_name, ble_dev in connected_devs:
+            if left_dev and left_dev[0] == mac:
+                continue
+            if right_dev and right_dev[0] == mac:
+                continue
+
+            nl = enum_name.lower()
+            if not left_dev and "left" in nl:
+                left_dev = (mac, enum_name, ble_dev)
+                print(f"[Bridge]   LEFT  ← name match: \"{enum_name}\" {mac}")
+            elif not right_dev and "right" in nl:
+                right_dev = (mac, enum_name, ble_dev)
+                print(f"[Bridge]   RIGHT ← name match: \"{enum_name}\" {mac}")
+            else:
+                print(f"[Bridge]   UNASSIGNED: \"{enum_name}\" {mac}")
+                print(f"[Bridge]     (use --left or --right MAC to assign)")
+
+        # Final report
+        print(f"\n[Bridge] ── Assignment result ──")
+        if left_dev:
+            print(f"  LEFT:  \"{left_dev[1]}\"  {left_dev[0]}")
+        else:
+            print(f"  LEFT:  (none)")
+        if right_dev:
+            print(f"  RIGHT: \"{right_dev[1]}\"  {right_dev[0]}")
+        else:
+            print(f"  RIGHT: (none)")
+        print()
+
+        if not left_dev and not right_dev:
+            print("[Bridge] ERROR: Could not assign any devices!")
+            print("[Bridge] Device names must contain 'left' or 'right',")
+            print("[Bridge] or specify --left MAC and/or --right MAC")
 
         return left_dev, right_dev
 
@@ -250,14 +323,13 @@ class CyberFingerBridge:
         left_dev, right_dev = await self.find_devices(left_mac, right_mac)
 
         if not left_dev and not right_dev:
-            print("[Bridge] ERROR: No connected CyberFinger devices found!")
-            print("[Bridge] Run ble_diagnostic.py to find addresses.")
+            print("[Bridge] ERROR: No CyberFinger devices could be assigned!")
+            print("[Bridge] Run ble_diagnostic.py to inspect the BLE stack.")
             return
 
         subscriptions = []
         polling_chars = []
 
-        # Subscribe sequentially to avoid Windows BLE resource exhaustion
         if left_dev:
             result = await self.setup_device("LEFT", left_dev[2])
             if result:
