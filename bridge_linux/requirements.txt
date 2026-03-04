@@ -1,0 +1,16 @@
+# CyberFinger Bridge — Linux dependencies
+
+# BLE (cross-platform via bleak)
+bleak
+
+# System tray icon
+pystray
+pillow
+
+# Virtual gamepad (Linux uinput)
+evdev
+
+# tkinter is usually pre-installed; if not:
+#   Ubuntu/Debian: sudo apt install python3-tk
+#   Fedora:        sudo dnf install python3-tkinter
+#   Arch:          sudo pacman -S tk
