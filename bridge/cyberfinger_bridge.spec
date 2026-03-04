@@ -6,33 +6,59 @@ import os
 
 block_cipher = None
 
-# Strip personal paths from the binary
 import PyInstaller.utils.hooks
-import os
+
+# Collect vgamepad's bundled DLLs (ViGEmClient.dll) and data files
+vgamepad_datas, vgamepad_binaries, vgamepad_hiddenimports = \
+    PyInstaller.utils.hooks.collect_all('vgamepad')
+
+# Collect all pystray submodules (backends are loaded dynamically)
+pystray_submodules = PyInstaller.utils.hooks.collect_submodules('pystray')
+
+# Discover ALL installed winrt namespace packages.
+# Each winrt-Windows.X.Y pip package installs as winrt.windows.x.y
+# PyInstaller can't auto-detect these because they're separate namespace packages.
+import importlib, pkgutil
+winrt_hiddenimports = ['winrt', 'winrt._winrt', 'winrt.system']
+try:
+    import winrt
+    for path in winrt.__path__:
+        pass
+    # Walk all winrt subpackages
+    for importer, modname, ispkg in pkgutil.walk_packages(winrt.__path__, prefix='winrt.'):
+        winrt_hiddenimports.append(modname)
+except Exception:
+    pass
+
+# Fallback: explicitly list known winrt modules in case walk fails
+winrt_explicit = [
+    'winrt.windows.devices.bluetooth',
+    'winrt.windows.devices.bluetooth.genericattributeprofile',
+    'winrt.windows.devices.enumeration',
+    'winrt.windows.storage.streams',
+    'winrt.windows.foundation',
+    'winrt.windows.foundation.collections',
+]
+for m in winrt_explicit:
+    if m not in winrt_hiddenimports:
+        winrt_hiddenimports.append(m)
 
 a = Analysis(
     ['cyberfinger_gui.py'],
     pathex=[],
-    binaries=[],
+    binaries=vgamepad_binaries,
     datas=[
         ('assets/icon_32x32.png', 'assets'),
         ('assets/icon_32x32_bw.png', 'assets'),
         ('assets/icon.png', 'assets'),
-    ],
+    ] + vgamepad_datas,
     hiddenimports=[
-        'winrt',
-        'winrt.windows.devices.bluetooth',
-        'winrt.windows.devices.bluetooth.genericattributeprofile',
-        'winrt.windows.devices.enumeration',
-        'winrt.windows.storage.streams',
-        'winrt.windows.foundation',
         'vgamepad',
         'pystray',
-        'pystray._win32',
         'PIL',
         'PIL.Image',
         'PIL.ImageDraw',
-    ],
+    ] + vgamepad_hiddenimports + pystray_submodules + winrt_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

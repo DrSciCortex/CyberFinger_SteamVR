@@ -159,6 +159,8 @@ class BLEManager:
         self._running = False
         self._subscriptions = []
         self._polling_chars = []
+        self._ble_devices = []     # track opened BLE device handles
+        self._gatt_services = []   # track opened GATT service handles
 
     def start(self):
         self._running = True
@@ -177,8 +179,34 @@ class BLEManager:
         try:
             loop.run_until_complete(self._main())
         except Exception as e:
-            self.app.log(f"BLE thread error: {e}")
+            if str(e) != "Event loop stopped before Future completed.":
+                self.app.log(f"BLE thread error: {e}")
         finally:
+            # Clean up: unsubscribe notifications
+            for _, char, token in self._subscriptions:
+                try:
+                    char.remove_value_changed(token)
+                except Exception:
+                    pass
+            self._subscriptions = []
+            self._polling_chars = []
+            # Close GATT service handles FIRST (they hold exclusive locks)
+            for svc in self._gatt_services:
+                try:
+                    svc.close()
+                except Exception:
+                    pass
+            self._gatt_services = []
+            # Then close BLE device handles
+            for ble_dev in self._ble_devices:
+                try:
+                    ble_dev.close()
+                except Exception:
+                    pass
+            self._ble_devices = []
+            # Give Windows time to release BLE handles
+            import time
+            time.sleep(0.5)
             try:
                 loop.close()
             except Exception:
@@ -201,6 +229,7 @@ class BLEManager:
 
         if left_dev:
             mac, name, ble_dev = left_dev
+            self._ble_devices.append(ble_dev)
             self.left.name = name
             self.left.connected = True
             result = await self._setup_device("LEFT", ble_dev)
@@ -213,6 +242,7 @@ class BLEManager:
 
         if right_dev:
             mac, name, ble_dev = right_dev
+            self._ble_devices.append(ble_dev)
             self.right.name = name
             self.right.connected = True
             result = await self._setup_device("RIGHT", ble_dev)
@@ -232,20 +262,13 @@ class BLEManager:
         self.app.log(f"Connected! {count} channel(s) active")
         self.app.set_status("Connected")
 
-        try:
-            while self._running:
-                for _, char in self._polling_chars:
-                    await self._poll_char(char)
-                if self._polling_chars:
-                    await asyncio.sleep(0.01)
-                else:
-                    await asyncio.sleep(0.1)
-        finally:
-            for _, char, token in self._subscriptions:
-                try:
-                    char.remove_value_changed(token)
-                except Exception:
-                    pass
+        while self._running:
+            for _, char in self._polling_chars:
+                await self._poll_char(char)
+            if self._polling_chars:
+                await asyncio.sleep(0.01)
+            else:
+                await asyncio.sleep(0.1)
 
     def _handle_data(self, data):
         if len(data) < INPUT_REPORT_SIZE:
@@ -331,9 +354,20 @@ class BLEManager:
             GattClientCharacteristicConfigurationDescriptorValue,
         )
 
-        svc_result = await ble_dev.get_gatt_services_async()
-        if svc_result.status != GattCommunicationStatus.SUCCESS:
-            self.app.log(f"{label}: Failed to get GATT services")
+        # Retry GATT service discovery (important for reconnect after stop)
+        svc_result = None
+        for attempt in range(3):
+            try:
+                svc_result = await ble_dev.get_gatt_services_async()
+                if svc_result.status == GattCommunicationStatus.SUCCESS:
+                    break
+            except Exception as e:
+                self.app.log(f"{label}: GATT attempt {attempt+1}/3 error: {e}")
+            self.app.log(f"{label}: GATT services attempt {attempt+1}/3 failed, retrying...")
+            await asyncio.sleep(0.5)
+
+        if not svc_result or svc_result.status != GattCommunicationStatus.SUCCESS:
+            self.app.log(f"{label}: Failed to get GATT services after 3 attempts")
             return None
 
         vr_svc = None
@@ -345,8 +379,22 @@ class BLEManager:
             self.app.log(f"{label}: 0xCF00 service not found!")
             return None
 
-        char_result = await vr_svc.get_characteristics_async()
-        if char_result.status != GattCommunicationStatus.SUCCESS:
+        # Track service handle for cleanup (CRITICAL for reconnect)
+        self._gatt_services.append(vr_svc)
+
+        # Retry characteristics discovery
+        char_result = None
+        for attempt in range(3):
+            try:
+                char_result = await vr_svc.get_characteristics_async()
+                if char_result.status == GattCommunicationStatus.SUCCESS:
+                    break
+            except Exception as e:
+                self.app.log(f"{label}: Characteristics attempt {attempt+1}/3 error: {e}")
+            await asyncio.sleep(0.3)
+
+        if not char_result or char_result.status != GattCommunicationStatus.SUCCESS:
+            self.app.log(f"{label}: Failed to get characteristics (status: {char_result.status if char_result else 'None'})")
             return None
 
         vr_input = None
@@ -355,8 +403,10 @@ class BLEManager:
                 vr_input = char
                 break
         if not vr_input:
+            self.app.log(f"{label}: CF01 characteristic not found")
             return None
 
+        # Clear any stale CCCD from previous session
         try:
             await vr_input.write_client_characteristic_configuration_descriptor_async(
                 GattClientCharacteristicConfigurationDescriptorValue.NONE
