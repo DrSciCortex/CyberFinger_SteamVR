@@ -1,0 +1,15 @@
+# CyberFinger Bridge dependencies
+
+# BLE (WinRT)
+winrt-Windows.Devices.Bluetooth
+winrt-Windows.Devices.Bluetooth.GenericAttributeProfile
+winrt-Windows.Devices.Enumeration
+winrt-Windows.Storage.Streams
+winrt-Windows.Foundation
+
+# Gamepad emulation (optional — VR mode works without it)
+vgamepad
+
+# Build tools (only needed for creating the .exe)
+# pyinstaller
+# pillow
