@@ -3,6 +3,8 @@
 A SteamVR driver that merges **two CyberFingers** + **hand tracking** into a pair of
 virtual VR controllers (soon with full skeletal hand data).
 
+Note: this is a *work-in-progress*, and currently very alpha software. 
+
 ## Building
 
 ### Prerequisites
