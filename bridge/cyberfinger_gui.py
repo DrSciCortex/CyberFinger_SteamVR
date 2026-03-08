@@ -40,18 +40,24 @@ GAMEPAD_PACK_FMT = "<IBBhhBB"
 INPUT_REPORT_FMT = "<BBhhBBI"
 INPUT_REPORT_SIZE = struct.calcsize(INPUT_REPORT_FMT)
 
-BTN_TRIGGER = 0x01
-BTN_GRIP    = 0x02
-BTN_B       = 0x04
-BTN_JCLICK  = 0x08
-BTN_A       = 0x10
+BTN_TRIGGER = 0x01  # bit0 — AX  (trigger)
+BTN_GRIP    = 0x02  # bit1 — BY  (grip)
+BTN_C       = 0x04  # bit2 — CZ
+BTN_D       = 0x08  # bit3 — DD
+BTN_E       = 0x10  # bit4 — EE
+BTN_MENU    = 0x20  # bit5 — BP  (bumper/menu)
+BTN_JCLICK  = 0x40  # bit6 — ST  (stick click)
+BTN_STSEL   = 0x80  # bit7 — STARTSELECT
 
 BUTTON_NAMES = {
     BTN_TRIGGER: "TRIG",
     BTN_GRIP:    "GRIP",
-    BTN_B:       "B",
+    BTN_C:       "C",
+    BTN_D:       "D",
+    BTN_E:       "E",
+    BTN_MENU:    "MENU",
     BTN_JCLICK:  "JCLK",
-    BTN_A:       "A",
+    BTN_STSEL:   "ST/SE",
 }
 
 # Brand colors
@@ -502,29 +508,54 @@ class GamepadMode:
         gp.left_joystick_float(x_value_float=left.joy_x_float, y_value_float=-left.joy_y_float)
         gp.right_joystick_float(x_value_float=right.joy_x_float, y_value_float=-right.joy_y_float)
 
-        # Right hand
-        if right.buttons & BTN_TRIGGER:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)
-        if right.buttons & BTN_GRIP:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)
-        if right.buttons & BTN_B:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER)
-        if right.buttons & BTN_JCLICK:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB)
-        if right.buttons & BTN_A:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_START)
+        # Triggers (analog)
+        gp.left_trigger_float(value_float=left.trigger_float)
+        gp.right_trigger_float(value_float=right.trigger_float)
 
-        # Left hand
+        # ── Right hand (original assignments preserved) ──
+        if right.buttons & BTN_TRIGGER:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)           # btn 1
+        if right.buttons & BTN_GRIP:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)           # btn 2
+        if right.buttons & BTN_MENU:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER) # btn 6
+        if right.buttons & BTN_JCLICK:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB) # btn 10
+        if right.buttons & BTN_STSEL:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_START)       # btn 8
+
+        # ── Left hand (original assignments preserved) ──
         if left.buttons & BTN_TRIGGER:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)           # btn 3
         if left.buttons & BTN_GRIP:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)
-        if left.buttons & BTN_B:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER)
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)           # btn 4
+        if left.buttons & BTN_MENU:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER) # btn 5
         if left.buttons & BTN_JCLICK:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB)
-        if left.buttons & BTN_A:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK)
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB)  # btn 9
+        if left.buttons & BTN_STSEL:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK)        # btn 7
+
+        # ── New C/D/E buttons — raw wButtons bits (11-16) ──
+        # Xbox 360 wButtons is a 16-bit field; bits 11-15 are unused by XInput
+        # and pass through ViGEm, appearing as buttons 11-16 in DirectInput.
+        # bit 11 = 0x0800 (reserved, unused by XInput)
+        # bit 12 = 0x1000 ... already XUSB_GAMEPAD_A — so we use D-pad bits
+        # instead, which are free in this mapping (no d-pad inputs assigned):
+        # DPAD_UP=0x0001(btn11), DPAD_DOWN=0x0002(btn12), DPAD_LEFT=0x0004(btn13)
+        # DPAD_RIGHT=0x0008(btn14), GUIDE=0x0400(btn15), reserved=0x0800(btn16)
+        if right.buttons & BTN_C:
+            gp.report.wButtons |= 0x0001  # DPAD_UP   → btn 11 (R-C)
+        if right.buttons & BTN_D:
+            gp.report.wButtons |= 0x0002  # DPAD_DOWN → btn 12 (R-D)
+        if right.buttons & BTN_E:
+            gp.report.wButtons |= 0x0004  # DPAD_LEFT → btn 13 (R-E)
+        if left.buttons & BTN_C:
+            gp.report.wButtons |= 0x0008  # DPAD_RIGHT → btn 14 (L-C)
+        if left.buttons & BTN_D:
+            gp.report.wButtons |= 0x0400  # GUIDE      → btn 15 (L-D)
+        if left.buttons & BTN_E:
+            gp.report.wButtons |= 0x0800  # reserved   → btn 16 (L-E)
 
         gp.update()
 
@@ -541,8 +572,8 @@ class CyberFingerApp:
         self.root = tk.Tk()
         self.root.title("CyberFinger Bridge")
         self.root.configure(bg=COLOR_BG)
-        self.root.geometry("680x580")
-        self.root.minsize(600, 500)
+        self.root.geometry("680x620")
+        self.root.minsize(600, 540)
 
         # Set window icon (color version)
         try:
@@ -901,7 +932,7 @@ class HandPanel:
         self.frame = ttk.Frame(parent)
         self.frame.pack(side=side, fill=tk.BOTH, expand=True, padx=(0, 4) if side == tk.LEFT else (4, 0))
 
-        self.canvas = tk.Canvas(self.frame, bg=COLOR_BG2, highlightthickness=0, height=180)
+        self.canvas = tk.Canvas(self.frame, bg=COLOR_BG2, highlightthickness=0, height=210)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         self._last_state = None
@@ -959,14 +990,17 @@ class HandPanel:
 
         # ── Button indicators ──
         btn_x = 3 * w // 4 if is_left else w // 4
-        btn_y_start = 50
-        btn_spacing = 24
+        btn_y_start = 30
+        btn_spacing = 17
         btn_names_bits = [
             ("TRIG", BTN_TRIGGER),
             ("GRIP", BTN_GRIP),
-            ("B", BTN_B),
-            ("A:ST/SE", BTN_A),
+            ("C",    BTN_C),
+            ("D",    BTN_D),
+            ("E",    BTN_E),
+            ("MENU", BTN_MENU),
             ("JCLK", BTN_JCLICK),
+            ("ST/SE",BTN_STSEL),
         ]
 
         for i, (name, bit) in enumerate(btn_names_bits):
@@ -974,14 +1008,14 @@ class HandPanel:
             pressed = bool(state.buttons & bit)
             fill = COLOR_ACCENT if pressed else COLOR_BG
             outline = COLOR_ACCENT if pressed else COLOR_BG3
-            c.create_oval(btn_x - 8, by - 8, btn_x + 8, by + 8,
+            c.create_oval(btn_x - 7, by - 7, btn_x + 7, by + 7,
                          fill=fill, outline=outline, width=2)
-            c.create_text(btn_x + 18, by, text=name, fill=COLOR_FG if pressed else COLOR_FG_DIM,
-                         font=("Consolas", 9), anchor=tk.W)
+            c.create_text(btn_x + 14, by, text=name, fill=COLOR_FG if pressed else COLOR_FG_DIM,
+                         font=("Consolas", 8), anchor=tk.W)
 
         # ── Trigger bar ──
         trig_x = w // 2
-        trig_y = 160
+        trig_y = 168
         trig_w = w - 40
         trig_h = 10
         trig_val = state.trigger_float

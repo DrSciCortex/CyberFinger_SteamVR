@@ -65,11 +65,19 @@ installer/
 
 ## Gamepad Button Mapping
 
-| Input          | Right Hand | Left Hand |
-|----------------|-----------|-----------|
-| 0x01 Trigger   | btn 1 (A) | btn 3 (X) |
-| 0x02 Grip      | btn 2 (B) | btn 4 (Y) |
-| 0x04 B button  | btn 6 (RB)| btn 5 (LB)|
-| 0x08 Joy click | btn 10(R3)| btn 9 (L3)|
-| 0x10 A button  | btn 8(Start)| btn 7(Back)|
-| Joystick       | Right Stick (Y inv) | Left Stick (Y inv) |
+| Bit  | Button       | Right Hand             | Left Hand              | XInput btn # |
+|------|--------------|------------------------|------------------------|--------------|
+| 0x01 | Trigger      | A                      | X                      | 1 / 3        |
+| 0x02 | Grip         | B                      | Y                      | 2 / 4        |
+| 0x20 | Menu         | RB (R-Shoulder)        | LB (L-Shoulder)        | 6 / 5        |
+| 0x40 | Joy Click    | R3 (R-Thumb)           | L3 (L-Thumb)           | 10 / 9       |
+| 0x80 | Start/Select | Start                  | Back                   | 8 / 7        |
+| 0x04 | C            | btn 11 (D-pad Up raw)  | btn 14 (D-pad Right raw) | 11 / 14    |
+| 0x08 | D            | btn 12 (D-pad Down raw)| btn 15 (Guide raw)     | 12 / 15      |
+| 0x10 | E            | btn 13 (D-pad Left raw)| btn 16 (reserved raw)  | 13 / 16      |
+| —    | Joystick     | Right Stick (Y inv)    | Left Stick (Y inv)     | —            |
+| —    | Trigger analog | Right Trigger        | Left Trigger           | —            |
+
+> **Note on buttons 11–16:** The Xbox 360 `wButtons` field has unused/reserved bits
+> that ViGEm passes through to DirectInput as extra buttons. C/D/E are mapped there
+> directly via `gp.report.wButtons` since they have no named `XUSB_BUTTON` enum entry.
