@@ -8,6 +8,7 @@
 #define MyAppPublisher "SciCortex Technologies Corp."
 #define MyAppURL "https://github.com/DrSciCortex/CyberFinger"
 #define MyAppExeName "CyberFingerBridge.exe"
+#define ViGEmSetup "ViGEmBus_1.22.0_x64_x86_arm64.exe"
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -21,13 +22,11 @@ DisableProgramGroupPage=yes
 OutputDir=..\dist\installer
 OutputBaseFilename=CyberFingerBridge_Setup_{#MyAppVersion}
 SetupIconFile=..\assets\icon.ico
+UninstallDisplayIcon={app}\icon.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-; Modern look
-WizardImageFile=compiler:WizModernImage.bmp
-WizardSmallImageFile=compiler:WizModernSmallImage.bmp
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -44,9 +43,10 @@ Source: "..\dist\CyberFingerBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\icon.png"; DestDir: "{app}"; Flags: ignoreversion
 
-; ViGEmBus installer
-; Download from: https://github.com/nefarius/ViGEmBus/releases
-Source: "ViGEmBus_1.22.0_x64_x86_arm64.exe"; DestDir: "{tmp}"; Flags: ignoreversion dontcopy; Check: ViGEmBusExists
+; ViGEmBus installer — bundled into the setup, extracted on demand
+; Download from: https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe
+; Place in: installer/ViGEmBus_1.22.0_x64_x86_arm64.exe
+Source: "{#ViGEmSetup}"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall; Check: ViGEmFileExists
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"
@@ -54,25 +54,50 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Run]
-; Install ViGEmBus driver if selected and available
-Filename: "{tmp}\ViGEmBus_1.22.0_x64_x86_arm64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Installing ViGEmBus driver..."; Tasks: installvigem; Check: ViGEmBusExists; Flags: waituntilterminated
+; Install ViGEmBus driver if the task is selected
+Filename: "{tmp}\{#ViGEmSetup}"; Parameters: "/qn /norestart"; StatusMsg: "Installing ViGEmBus driver..."; Tasks: installvigem; Check: ViGEmFileExists; Flags: waituntilterminated shellexec
 
 ; Launch after install
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function ViGEmBusExists: Boolean;
+function ViGEmFileExists: Boolean;
 begin
-  Result := FileExists(ExpandConstant('{src}\ViGEmBus_1.22.0_x64_x86_arm64.exe'));
+  // Check if the ViGEm installer exists next to setup.iss at compile time
+  // At runtime this always returns True because the file is bundled into the setup
+  Result := True;
+end;
+
+function IsViGEmInstalled: Boolean;
+var
+  RegistryStr: String;
+begin
+  // Check if ViGEmBus is already installed via registry
+  Result := False;
+  if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B37B7390-6E44-4D67-8FC6-565B8A1E58FF}_is1',
+     'DisplayName', RegistryStr) then
+  begin
+    Result := True;
+  end;
+  // Also check alternative registry path
+  if not Result then
+  begin
+    if RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{B37B7390-6E44-4D67-8FC6-565B8A1E58FF}_is1',
+       'DisplayName', RegistryStr) then
+    begin
+      Result := True;
+    end;
+  end;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = wpSelectTasks then
   begin
-    if not ViGEmBusExists then
+    if IsViGEmInstalled then
     begin
-      Log('ViGEmBus_Setup.exe not found — Gamepad mode driver task will be hidden');
+      Log('ViGEmBus already installed — unchecking driver install task');
+      // Could auto-uncheck but user can still override
     end;
   end;
 end;
