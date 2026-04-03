@@ -935,14 +935,18 @@ class CyberFingerApp:
         ctrl_frame = ttk.Frame(self.root)
         ctrl_frame.pack(fill=tk.X, padx=16, pady=(4, 4))
 
+        # Radio buttons stacked vertically on the left
         self.mode_var = tk.StringVar(value=self._config.get("mode", "vr"))
-        ttk.Radiobutton(ctrl_frame, text="VR Mode (BLE→SteamVR)",
-                        variable=self.mode_var, value="vr").pack(side=tk.LEFT, padx=(0, 16))
-        ttk.Radiobutton(ctrl_frame, text="Gamepad Mode (BLE→Xbox 360)",
-                        variable=self.mode_var, value="gamepad").pack(side=tk.LEFT, padx=(0, 16))
-        ttk.Radiobutton(ctrl_frame, text="VRChat OSC",
-                        variable=self.mode_var, value="vrchat").pack(side=tk.LEFT)
+        radio_frame = ttk.Frame(ctrl_frame)
+        radio_frame.pack(side=tk.LEFT)
+        ttk.Radiobutton(radio_frame, text="VR Mode (BLE→SteamVR)",
+                        variable=self.mode_var, value="vr").pack(anchor=tk.W)
+        ttk.Radiobutton(radio_frame, text="Gamepad Mode (BLE→Xbox 360)",
+                        variable=self.mode_var, value="gamepad").pack(anchor=tk.W)
+        ttk.Radiobutton(radio_frame, text="VRChat OSC (BLE→OSC:9000)",
+                        variable=self.mode_var, value="vrchat").pack(anchor=tk.W)
 
+        # Start/Stop buttons on the right
         self.stop_btn = ttk.Button(ctrl_frame, text="Stop", style="Stop.TButton",
                                    command=self._stop_bridge, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.RIGHT, padx=(8, 0))
