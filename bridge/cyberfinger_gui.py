@@ -491,8 +491,6 @@ class VRMode:
 #   Stick click     → Jump  (either side)
 #   C button        → Drop  (either side, useful with grab toggle)
 
-OSC_STICK_THRESHOLD = 0.5  # analog deadzone for converting stick to digital OSC bool
-
 class VRChatOSCMode:
     OSC_PORT = 9000
 
@@ -506,15 +504,13 @@ class VRChatOSCMode:
         except ImportError:
             pass
 
-        # Grip tap-to-toggle state
+        # Grip press timestamps for tap-vs-hold detection
         self._grab_right = False
         self._grab_left  = False
+        self._grip_right_press_time = 0.0
+        self._grip_left_press_time  = 0.0
         self._prev_grip_right = False
         self._prev_grip_left  = False
-
-        # Menu tap-to-toggle (send pulse, not hold)
-        self._prev_menu_right = False
-        self._prev_menu_left  = False
 
         # Jump debounce (send pulse on press edge only)
         self._prev_jclick_right = False
@@ -553,61 +549,74 @@ class VRChatOSCMode:
         if not self.available:
             return
 
-        # ── Sticks → movement + run ────────────────────────────────────
-        # Left stick  → strafe left/right + forward/backward
-        # Right stick → look left/right + forward/backward
-        # If BOTH sticks are pushed in the same forward/backward direction
-        # beyond RUN_THRESHOLD, activate /input/Run until they diverge.
-        RUN_THRESHOLD = 0.50
-
+        # ── Sticks → movement axes (continuous float) ─────────────────
+        # Left stick  → /input/Vertical (fwd/back) + /input/Horizontal (strafe)
+        # Right stick → /input/LookHorizontal (turn) + /input/Vertical (fwd/back)
+        # VRChat convention: Vertical +1=fwd, -1=back; Horizontal +1=right, -1=left
+        # Joystick Y: negative = stick up = forward, so negate for VRC.
         lx = left.joy_x_float
-        ly = left.joy_y_float   # negative = forward (stick up)
+        ly = left.joy_y_float
         rx = right.joy_x_float
         ry = right.joy_y_float
 
-        fwd  = ly < -OSC_STICK_THRESHOLD
-        back = ly >  OSC_STICK_THRESHOLD
-        r_fwd  = ry < -OSC_STICK_THRESHOLD
-        r_back = ry >  OSC_STICK_THRESHOLD
+        # OR both sticks for Vertical so either can drive movement
+        vertical = -ly if abs(ly) >= abs(ry) else -ry
+        if abs(ly) > 0.01 and abs(ry) > 0.01:
+            # Both pushed — take the larger magnitude
+            vertical = -ly if abs(ly) > abs(ry) else -ry
 
-        # Run if both sticks agree on direction and exceed the run threshold
-        both_fwd  = (ly < -RUN_THRESHOLD) and (ry < -RUN_THRESHOLD)
-        both_back = (ly >  RUN_THRESHOLD) and (ry >  RUN_THRESHOLD)
-        running = both_fwd or both_back
+        self._send("/input/Vertical",       round(vertical, 3))
+        self._send("/input/Horizontal",     round(lx, 3))
+        self._send("/input/LookHorizontal", round(rx, 3))
 
-        self._send("/input/Run",          int(running))
-        self._send("/input/MoveForward",  int(fwd  or r_fwd))
-        self._send("/input/MoveBackward", int(back or r_back))
-        self._send("/input/MoveLeft",     int(lx < -OSC_STICK_THRESHOLD))
-        self._send("/input/MoveRight",    int(lx >  OSC_STICK_THRESHOLD))
-        self._send("/input/LookLeft",     int(rx < -OSC_STICK_THRESHOLD))
-        self._send("/input/LookRight",    int(rx >  OSC_STICK_THRESHOLD))
+        # ── Run: both sticks forward > 50% ────────────────────────────
+        both_fwd  = (-ly > 0.50) and (-ry > 0.50)
+        both_back = ( ly > 0.50) and ( ry > 0.50)
+        self._send("/input/Run", int(both_fwd or both_back))
 
         # ── Triggers (analog) ──────────────────────────────────────────
         self._send("/input/UseAxisRight", right.trigger_float)
         self._send("/input/UseAxisLeft",  left.trigger_float)
 
-        # ── Grip → tap-to-toggle grab ──────────────────────────────────
+        # ── Grip → tap or hold ────────────────────────────────────────
+        # Tap  (<200ms): press on down, release on up — normal momentary grab.
+        # Hold (≥200ms): toggle grab state on release (send 1 or 0 to flip).
         grip_r = bool(right.buttons & BTN_GRIP)
         grip_l = bool(left.buttons  & BTN_GRIP)
-        if grip_r and not self._prev_grip_right:   # rising edge
-            self._grab_right = not self._grab_right
-            self._send("/input/GrabRight", int(self._grab_right))
+
+        if grip_r and not self._prev_grip_right:        # rising edge
+            self._grip_right_press_time = time.time()
+            self._send("/input/GrabRight", 1)
+        elif not grip_r and self._prev_grip_right:      # falling edge
+            held_ms = (time.time() - self._grip_right_press_time) * 1000
+            if held_ms < 200:                           # tap → toggle
+                self._grab_right = not self._grab_right
+                self._send("/input/GrabRight", int(self._grab_right))
+            else:                                       # hold → release on finger-up
+                self._grab_right = False
+                self._send("/input/GrabRight", 0)
+
         if grip_l and not self._prev_grip_left:
-            self._grab_left = not self._grab_left
-            self._send("/input/GrabLeft", int(self._grab_left))
+            self._grip_left_press_time = time.time()
+            self._send("/input/GrabLeft", 1)
+        elif not grip_l and self._prev_grip_left:
+            held_ms = (time.time() - self._grip_left_press_time) * 1000
+            if held_ms < 200:
+                self._grab_left = not self._grab_left
+                self._send("/input/GrabLeft", int(self._grab_left))
+            else:
+                self._grab_left = False
+                self._send("/input/GrabLeft", 0)
+
         self._prev_grip_right = grip_r
         self._prev_grip_left  = grip_l
 
-        # ── Menu → QuickMenuToggle (pulse on press edge) ───────────────
+        # ── Menu → QuickMenuToggle (hold 1 while pressed, 0 on release) ─
+        # VRChat treats this as "open while value is 1", not a pulse event.
         menu_r = bool(right.buttons & BTN_MENU)
         menu_l = bool(left.buttons  & BTN_MENU)
-        if menu_r and not self._prev_menu_right:
-            self._send_pulse("/input/QuickMenuToggle")
-        if menu_l and not self._prev_menu_left:
-            self._send_pulse("/input/QuickMenuToggle")
-        self._prev_menu_right = menu_r
-        self._prev_menu_left  = menu_l
+        menu_pressed = menu_r or menu_l
+        self._send("/input/QuickMenuToggle", int(menu_pressed))
 
         # ── Stick click → Jump (pulse on press edge, either side) ──────
         jclick_r = bool(right.buttons & BTN_JCLICK)
@@ -631,12 +640,11 @@ class VRChatOSCMode:
         if not self.available:
             return
         # Release everything cleanly on stop
-        for addr in ("/input/Run",
-                     "/input/MoveForward", "/input/MoveBackward",
-                     "/input/MoveLeft",    "/input/MoveRight",
-                     "/input/LookLeft",    "/input/LookRight",
-                     "/input/UseAxisRight","/input/UseAxisLeft",
-                     "/input/GrabRight",   "/input/GrabLeft"):
+        for addr in ("/input/Vertical",         "/input/Horizontal",
+                     "/input/LookHorizontal",   "/input/Run",
+                     "/input/UseAxisRight",      "/input/UseAxisLeft",
+                     "/input/GrabRight",         "/input/GrabLeft",
+                     "/input/QuickMenuToggle"):
             try:
                 self._client.send_message(addr, 0)
             except Exception:
