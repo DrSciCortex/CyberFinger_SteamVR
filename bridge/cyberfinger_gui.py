@@ -560,26 +560,35 @@ class VRChatOSCMode:
         ry = right.joy_y_float
 
         # ── Sticks → movement axes ─────────────────────────────────────
-        # OR both sticks for Vertical so either can drive movement
+        # Axes are sent every frame bypassing the cache — VRChat needs a
+        # continuous stream while moving; gaps cause it to stop responding.
         vertical = -ly if abs(ly) >= abs(ry) else -ry
         if abs(ly) > 0.01 and abs(ry) > 0.01:
             vertical = -ly if abs(ly) > abs(ry) else -ry
 
-        self._send("/input/Vertical",       round(vertical, 3))
-        self._send("/input/Horizontal",     round(lx, 3))
-        # Scale look so 80% deflection = 1.01 — snap-turn needs value > 1.0
         look = round(rx / 0.80, 3)
         look = max(-1.01, min(1.01, look))
-        self._send("/input/LookHorizontal", look)
+
+        for addr, val in (
+            ("/input/Vertical",       round(vertical, 3)),
+            ("/input/Horizontal",     round(lx, 3)),
+            ("/input/LookHorizontal", look),
+        ):
+            try:
+                self._client.send_message(addr, val)
+            except Exception:
+                pass
+        self._last.update({"/input/Vertical": vertical,
+                           "/input/Horizontal": lx,
+                           "/input/LookHorizontal": look})
 
         # ── Run: both sticks forward > 50% ────────────────────────────
         both_fwd  = (-ly > 0.50) and (-ry > 0.50)
         both_back = ( ly > 0.50) and ( ry > 0.50)
         self._send("/input/Run", int(both_fwd or both_back))
 
-        # ── Triggers → UseRight / UseLeft (button, VR only) ───────────
-        # UseAxisRight/Left don't exist — correct addresses are UseRight/UseLeft.
-        # Send as buttons: 1 while trigger is pressed, 0 when released.
+        # ── Triggers → UseRight / UseLeft ─────────────────────────────
+        # UseRight/Left are buttons (1/0). VRChat window must be focused.
         trig_r = right.trigger_float > 0.1
         trig_l = left.trigger_float  > 0.1
         self._send("/input/UseRight", int(trig_r))
@@ -1046,6 +1055,9 @@ class CyberFingerApp:
         else:
             self.active_mode = self.vrchat_osc_mode
         self.log(f"Starting {mode.upper()} mode...")
+        if mode == "vrchat":
+            self.log(">>> VRChat: enable OSC via Action Menu → OSC → Enabled")
+            self.log(">>> VRChat window must be focused for Use/Grab to work")
 
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
