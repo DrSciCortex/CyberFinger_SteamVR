@@ -512,9 +512,15 @@ class VRChatOSCMode:
         self._prev_grip_right = False
         self._prev_grip_left  = False
 
-        # Jump debounce (send pulse on press edge only)
-        self._prev_jclick_right = False
-        self._prev_jclick_left  = False
+        # Menu tap-vs-hold (500ms threshold)
+        # Tap  → QuickMenuToggle (pulse on release)
+        # Hold → ActionMenuToggle (held open, released on finger-up)
+        self._menu_right_press_time  = 0.0
+        self._menu_left_press_time   = 0.0
+        self._menu_right_action_open = False  # True while action menu held open
+        self._menu_left_action_open  = False
+        self._prev_menu_right = False
+        self._prev_menu_left  = False
 
         # C button (Drop) debounce
         self._prev_c_right = False
@@ -559,20 +565,27 @@ class VRChatOSCMode:
         rx = right.joy_x_float
         ry = right.joy_y_float
 
-        # OR both sticks for Vertical so either can drive movement
-        vertical = -ly if abs(ly) >= abs(ry) else -ry
-        if abs(ly) > 0.01 and abs(ry) > 0.01:
-            # Both pushed — take the larger magnitude
-            vertical = -ly if abs(ly) > abs(ry) else -ry
+        # ── Sticks → movement (suppressed while action menu is open) ──
+        action_open_r = self._menu_right_action_open
+        action_open_l = self._menu_left_action_open
 
-        self._send("/input/Vertical",       round(vertical, 3))
-        self._send("/input/Horizontal",     round(lx, 3))
-        self._send("/input/LookHorizontal", round(rx, 3))
+        if not (action_open_r or action_open_l):
+            # OR both sticks for Vertical so either can drive movement
+            vertical = -ly if abs(ly) >= abs(ry) else -ry
+            if abs(ly) > 0.01 and abs(ry) > 0.01:
+                vertical = -ly if abs(ly) > abs(ry) else -ry
 
-        # ── Run: both sticks forward > 50% ────────────────────────────
-        both_fwd  = (-ly > 0.50) and (-ry > 0.50)
-        both_back = ( ly > 0.50) and ( ry > 0.50)
-        self._send("/input/Run", int(both_fwd or both_back))
+            self._send("/input/Vertical",       round(vertical, 3))
+            self._send("/input/Horizontal",     round(lx, 3))
+            # Scale look so 80% deflection = 1.01 — snap-turn needs value > 1.0
+            look = round(rx / 0.80, 3)
+            look = max(-1.01, min(1.01, look))
+            self._send("/input/LookHorizontal", look)
+
+            # ── Run: both sticks forward > 50% ────────────────────────
+            both_fwd  = (-ly > 0.50) and (-ry > 0.50)
+            both_back = ( ly > 0.50) and ( ry > 0.50)
+            self._send("/input/Run", int(both_fwd or both_back))
 
         # ── Triggers (analog) ──────────────────────────────────────────
         self._send("/input/UseAxisRight", right.trigger_float)
@@ -611,21 +624,74 @@ class VRChatOSCMode:
         self._prev_grip_right = grip_r
         self._prev_grip_left  = grip_l
 
-        # ── Menu → QuickMenuToggle (hold 1 while pressed, 0 on release) ─
-        # VRChat treats this as "open while value is 1", not a pulse event.
+        # ── Menu buttons: tap → QuickMenu or close ActionMenu,
+        #                 long press (≥500ms) → open ActionMenu ──────────
+        MENU_HOLD_MS = 500
         menu_r = bool(right.buttons & BTN_MENU)
         menu_l = bool(left.buttons  & BTN_MENU)
-        menu_pressed = menu_r or menu_l
-        self._send("/input/QuickMenuToggle", int(menu_pressed))
 
-        # ── Stick click → Jump (pulse on press edge, either side) ──────
+        for pressed, prev, press_time_attr, action_open_attr, \
+                quick_addr, action_addr in [
+            (menu_r, self._prev_menu_right, "_menu_right_press_time",
+             "_menu_right_action_open",
+             "/input/QuickMenuToggleRight", "/input/ActionMenuToggleRight"),
+            (menu_l, self._prev_menu_left,  "_menu_left_press_time",
+             "_menu_left_action_open",
+             "/input/QuickMenuToggleLeft",  "/input/ActionMenuToggleLeft"),
+        ]:
+            action_open = getattr(self, action_open_attr)
+            if pressed and not prev:                         # rising edge — start timer
+                setattr(self, press_time_attr, time.time())
+            elif not pressed and prev:                       # falling edge — decide
+                held_ms = (time.time() - getattr(self, press_time_attr)) * 1000
+                if held_ms >= MENU_HOLD_MS:
+                    # Long press → open action menu (pulse 1 then 0)
+                    setattr(self, action_open_attr, True)
+                    self._send_pulse(action_addr)
+                else:
+                    if action_open:
+                        # Tap while action menu open → close it (pulse again)
+                        setattr(self, action_open_attr, False)
+                        self._send_pulse(action_addr)
+                    else:
+                        # Tap with no action menu → quick menu pulse
+                        self._send_pulse(quick_addr)
+
+        self._prev_menu_right = menu_r
+        self._prev_menu_left  = menu_l
+
+        # ── Stick routing: action menu open → SpinHoldCwCcw, else normal ──
+        # If the action menu is open on a hand, that hand's stick spins the
+        # selector wheel. The other hand's stick does normal look/move.
+        # Both hands open simultaneously: both sticks spin (edge case).
+        action_open_r = self._menu_right_action_open
+        action_open_l = self._menu_left_action_open
+        any_action_open = action_open_r or action_open_l
+
+        if any_action_open:
+            # Route the active hand's stick to spin; use whichever is deflected more
+            spin = rx if action_open_r else lx
+            if action_open_r and action_open_l:
+                spin = rx if abs(rx) > abs(lx) else lx
+            self._send("/input/SpinHoldCwCcw", round(spin, 3))
+            # Suppress normal movement while navigating menu
+            self._send("/input/Vertical",       0.0)
+            self._send("/input/Horizontal",     0.0)
+            self._send("/input/LookHorizontal", 0.0)
+        else:
+            self._send("/input/SpinHoldCwCcw", 0.0)
+
+        # ── Stick click → Jump ─────────────────────────────────────────
+        # Jump is a button input: must send 0 between presses or VRChat ignores
+        # the second press. We bypass _send()'s cache and always transmit.
         jclick_r = bool(right.buttons & BTN_JCLICK)
         jclick_l = bool(left.buttons  & BTN_JCLICK)
-        if (jclick_r and not self._prev_jclick_right) or \
-           (jclick_l and not self._prev_jclick_left):
-            self._send_pulse("/input/Jump")
-        self._prev_jclick_right = jclick_r
-        self._prev_jclick_left  = jclick_l
+        jump = int(jclick_r or jclick_l)
+        try:
+            self._client.send_message("/input/Jump", jump)
+        except Exception:
+            pass
+        self._last["/input/Jump"] = jump  # keep cache in sync for stop()
 
         # ── C button → Drop (pulse on press edge, either side) ─────────
         c_r = bool(right.buttons & BTN_C)
@@ -640,11 +706,13 @@ class VRChatOSCMode:
         if not self.available:
             return
         # Release everything cleanly on stop
-        for addr in ("/input/Vertical",         "/input/Horizontal",
-                     "/input/LookHorizontal",   "/input/Run",
-                     "/input/UseAxisRight",      "/input/UseAxisLeft",
-                     "/input/GrabRight",         "/input/GrabLeft",
-                     "/input/QuickMenuToggle"):
+        for addr in ("/input/Vertical",                "/input/Horizontal",
+                     "/input/LookHorizontal",           "/input/Run",
+                     "/input/SpinHoldCwCcw",            "/input/UseAxisRight",
+                     "/input/UseAxisLeft",               "/input/GrabRight",
+                     "/input/GrabLeft",                  "/input/QuickMenuToggleRight",
+                     "/input/QuickMenuToggleLeft",        "/input/ActionMenuToggleRight",
+                     "/input/ActionMenuToggleLeft",       "/input/Jump"):
             try:
                 self._client.send_message(addr, 0)
             except Exception:
