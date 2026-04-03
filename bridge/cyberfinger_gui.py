@@ -477,6 +477,173 @@ class VRMode:
         self.sock.close()
 
 
+# ── VRChat OSC Mode ──────────────────────────────────────────────────────
+#
+# Sends OSC messages to VRChat on localhost:9000 (VRChat's default OSC port).
+# Requires: pip install python-osc
+#
+# Mapping:
+#   Left stick      → MoveForward / MoveBackward / MoveLeft / MoveRight
+#   Right stick     → MoveForward / MoveBackward / LookLeft / LookRight
+#   Trigger (R/L)   → UseAxisRight / UseAxisLeft  (analog 0.0-1.0)
+#   Grip            → GrabRight / GrabLeft  (tap-to-toggle, managed here)
+#   Menu (R/L)      → QuickMenuToggle
+#   Stick click     → Jump  (either side)
+#   C button        → Drop  (either side, useful with grab toggle)
+
+OSC_STICK_THRESHOLD = 0.5  # analog deadzone for converting stick to digital OSC bool
+
+class VRChatOSCMode:
+    OSC_PORT = 9000
+
+    def __init__(self):
+        self.available = False
+        self._client = None
+        try:
+            from pythonosc import udp_client
+            self._client = udp_client.SimpleUDPClient("127.0.0.1", self.OSC_PORT)
+            self.available = True
+        except ImportError:
+            pass
+
+        # Grip tap-to-toggle state
+        self._grab_right = False
+        self._grab_left  = False
+        self._prev_grip_right = False
+        self._prev_grip_left  = False
+
+        # Menu tap-to-toggle (send pulse, not hold)
+        self._prev_menu_right = False
+        self._prev_menu_left  = False
+
+        # Jump debounce (send pulse on press edge only)
+        self._prev_jclick_right = False
+        self._prev_jclick_left  = False
+
+        # C button (Drop) debounce
+        self._prev_c_right = False
+        self._prev_c_left  = False
+
+        # Track last-sent axis states to avoid spamming identical values
+        self._last = {}
+
+    def _send(self, address, value):
+        """Send OSC message, skipping if value unchanged."""
+        if self._last.get(address) == value:
+            return
+        self._last[address] = value
+        try:
+            self._client.send_message(address, value)
+        except Exception:
+            pass
+
+    def _send_pulse(self, address):
+        """Send a 1 then immediately a 0 — VRChat toggle inputs expect this."""
+        try:
+            self._client.send_message(address, 1)
+            self._client.send_message(address, 0)
+        except Exception:
+            pass
+        self._last.pop(address, None)  # reset cache so next pulse always fires
+
+    def on_input(self, hand, state):
+        pass  # update_osc called by app with both states
+
+    def update_osc(self, left, right):
+        if not self.available:
+            return
+
+        # ── Sticks → movement + run ────────────────────────────────────
+        # Left stick  → strafe left/right + forward/backward
+        # Right stick → look left/right + forward/backward
+        # If BOTH sticks are pushed in the same forward/backward direction
+        # beyond RUN_THRESHOLD, activate /input/Run until they diverge.
+        RUN_THRESHOLD = 0.50
+
+        lx = left.joy_x_float
+        ly = left.joy_y_float   # negative = forward (stick up)
+        rx = right.joy_x_float
+        ry = right.joy_y_float
+
+        fwd  = ly < -OSC_STICK_THRESHOLD
+        back = ly >  OSC_STICK_THRESHOLD
+        r_fwd  = ry < -OSC_STICK_THRESHOLD
+        r_back = ry >  OSC_STICK_THRESHOLD
+
+        # Run if both sticks agree on direction and exceed the run threshold
+        both_fwd  = (ly < -RUN_THRESHOLD) and (ry < -RUN_THRESHOLD)
+        both_back = (ly >  RUN_THRESHOLD) and (ry >  RUN_THRESHOLD)
+        running = both_fwd or both_back
+
+        self._send("/input/Run",          int(running))
+        self._send("/input/MoveForward",  int(fwd  or r_fwd))
+        self._send("/input/MoveBackward", int(back or r_back))
+        self._send("/input/MoveLeft",     int(lx < -OSC_STICK_THRESHOLD))
+        self._send("/input/MoveRight",    int(lx >  OSC_STICK_THRESHOLD))
+        self._send("/input/LookLeft",     int(rx < -OSC_STICK_THRESHOLD))
+        self._send("/input/LookRight",    int(rx >  OSC_STICK_THRESHOLD))
+
+        # ── Triggers (analog) ──────────────────────────────────────────
+        self._send("/input/UseAxisRight", right.trigger_float)
+        self._send("/input/UseAxisLeft",  left.trigger_float)
+
+        # ── Grip → tap-to-toggle grab ──────────────────────────────────
+        grip_r = bool(right.buttons & BTN_GRIP)
+        grip_l = bool(left.buttons  & BTN_GRIP)
+        if grip_r and not self._prev_grip_right:   # rising edge
+            self._grab_right = not self._grab_right
+            self._send("/input/GrabRight", int(self._grab_right))
+        if grip_l and not self._prev_grip_left:
+            self._grab_left = not self._grab_left
+            self._send("/input/GrabLeft", int(self._grab_left))
+        self._prev_grip_right = grip_r
+        self._prev_grip_left  = grip_l
+
+        # ── Menu → QuickMenuToggle (pulse on press edge) ───────────────
+        menu_r = bool(right.buttons & BTN_MENU)
+        menu_l = bool(left.buttons  & BTN_MENU)
+        if menu_r and not self._prev_menu_right:
+            self._send_pulse("/input/QuickMenuToggle")
+        if menu_l and not self._prev_menu_left:
+            self._send_pulse("/input/QuickMenuToggle")
+        self._prev_menu_right = menu_r
+        self._prev_menu_left  = menu_l
+
+        # ── Stick click → Jump (pulse on press edge, either side) ──────
+        jclick_r = bool(right.buttons & BTN_JCLICK)
+        jclick_l = bool(left.buttons  & BTN_JCLICK)
+        if (jclick_r and not self._prev_jclick_right) or \
+           (jclick_l and not self._prev_jclick_left):
+            self._send_pulse("/input/Jump")
+        self._prev_jclick_right = jclick_r
+        self._prev_jclick_left  = jclick_l
+
+        # ── C button → Drop (pulse on press edge, either side) ─────────
+        c_r = bool(right.buttons & BTN_C)
+        c_l = bool(left.buttons  & BTN_C)
+        if (c_r and not self._prev_c_right) or \
+           (c_l and not self._prev_c_left):
+            self._send_pulse("/input/Drop")
+        self._prev_c_right = c_r
+        self._prev_c_left  = c_l
+
+    def stop(self):
+        if not self.available:
+            return
+        # Release everything cleanly on stop
+        for addr in ("/input/Run",
+                     "/input/MoveForward", "/input/MoveBackward",
+                     "/input/MoveLeft",    "/input/MoveRight",
+                     "/input/LookLeft",    "/input/LookRight",
+                     "/input/UseAxisRight","/input/UseAxisLeft",
+                     "/input/GrabRight",   "/input/GrabLeft"):
+            try:
+                self._client.send_message(addr, 0)
+            except Exception:
+                pass
+        self._last.clear()
+
+
 # ── Gamepad Mode (ViGEm Xbox 360) ────────────────────────────────────────
 
 class GamepadMode:
@@ -598,6 +765,7 @@ class CyberFingerApp:
         self.ble = BLEManager(self)
         self.vr_mode = VRMode()
         self.gamepad_mode = GamepadMode()
+        self.vrchat_osc_mode = VRChatOSCMode()
         self.active_mode = None
 
         self._build_ui()
@@ -771,7 +939,9 @@ class CyberFingerApp:
         ttk.Radiobutton(ctrl_frame, text="VR Mode (BLE→SteamVR)",
                         variable=self.mode_var, value="vr").pack(side=tk.LEFT, padx=(0, 16))
         ttk.Radiobutton(ctrl_frame, text="Gamepad Mode (BLE→Xbox 360)",
-                        variable=self.mode_var, value="gamepad").pack(side=tk.LEFT)
+                        variable=self.mode_var, value="gamepad").pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Radiobutton(ctrl_frame, text="VRChat OSC",
+                        variable=self.mode_var, value="vrchat").pack(side=tk.LEFT)
 
         self.stop_btn = ttk.Button(ctrl_frame, text="Stop", style="Stop.TButton",
                                    command=self._stop_bridge, state=tk.DISABLED)
@@ -831,13 +1001,22 @@ class CyberFingerApp:
             self.log("Install: pip install vgamepad")
             self.log("Also need ViGEmBus driver")
             return
+        if mode == "vrchat" and not self.vrchat_osc_mode.available:
+            self.log("ERROR: python-osc not available!")
+            self.log("Install: pip install python-osc")
+            return
 
         # Save settings
         self._config["mode"] = mode
         self._config["autostart"] = self.autostart_var.get()
         self._save_config()
 
-        self.active_mode = self.vr_mode if mode == "vr" else self.gamepad_mode
+        if mode == "vr":
+            self.active_mode = self.vr_mode
+        elif mode == "gamepad":
+            self.active_mode = self.gamepad_mode
+        else:
+            self.active_mode = self.vrchat_osc_mode
         self.log(f"Starting {mode.upper()} mode...")
 
         self.start_btn.configure(state=tk.DISABLED)
@@ -868,12 +1047,15 @@ class CyberFingerApp:
         self.ble = BLEManager(self)
         if self.gamepad_mode.available:
             self.gamepad_mode = GamepadMode()
+        self.vrchat_osc_mode = VRChatOSCMode()
 
     def on_input(self, hand, state):
         """Called from BLE thread on each input report."""
         if self.active_mode:
             if isinstance(self.active_mode, GamepadMode):
                 self.active_mode.update_gamepad(self.ble.left, self.ble.right)
+            elif isinstance(self.active_mode, VRChatOSCMode):
+                self.active_mode.update_osc(self.ble.left, self.ble.right)
             else:
                 self.active_mode.on_input(hand, state)
 
@@ -917,6 +1099,7 @@ class CyberFingerApp:
     def run(self):
         self.log("CyberFinger Bridge ready")
         self.log(f"Gamepad mode: {'available' if self.gamepad_mode.available else 'not available (install vgamepad)'}")
+        self.log(f"VRChat OSC mode: {'available' if self.vrchat_osc_mode.available else 'not available (install python-osc)'}")
         if not HAS_TRAY:
             self.log("System tray: not available (install pystray pillow)")
         self.root.mainloop()
