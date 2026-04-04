@@ -944,6 +944,9 @@ class GamepadModeVRChat:
             self._osc_send(addr, 0)
 
 
+# ── GUI Application ──────────────────────────────────────────────────────
+
+class CyberFingerApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("CyberFinger Bridge")
