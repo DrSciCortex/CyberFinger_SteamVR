@@ -825,24 +825,28 @@ class GamepadModeVRChat:
         gp.reset()
 
         # ── Sticks ────────────────────────────────────────────────────
-        # Left  X → strafe,       Left  Y → move fwd/back
-        # Right X → turn,         Right Y → move fwd/back (NOT look up/down —
-        #   looking up/down with a stick is nauseating in VR)
-        # VRChat gamepad: left stick Y drives vertical movement axis,
-        # right stick Y also feeds into forward/back (take larger magnitude).
-        fwd = -left.joy_y_float
-        fwd_r = -right.joy_y_float
-        combined_fwd = fwd if abs(fwd) >= abs(fwd_r) else fwd_r
-
+        # Left  X/Y → strafe / move fwd/back
+        # Right X/Y → full passthrough: X=turn, Y=action menu selection
+        #   (VRChat uses right stick Y for action menu flick selection,
+        #    so we must not zero it out)
         gp.left_joystick_float(x_value_float=left.joy_x_float,
-                               y_value_float=combined_fwd)
-        # Right stick X = turn; Y = 0 (suppress look up/down)
+                               y_value_float=-left.joy_y_float)
         gp.right_joystick_float(x_value_float=right.joy_x_float,
-                                y_value_float=0.0)
+                                y_value_float=-right.joy_y_float)
 
-        # ── Triggers → Use/Interact (analog) ──
-        gp.left_trigger_float(value_float=left.trigger_float)
-        gp.right_trigger_float(value_float=right.trigger_float)
+        # ── Triggers → Use/Interact ────────────────────────────────────
+        # VRChat gamepad limitation (confirmed, unfixed since 2022):
+        # LT does NOT trigger left hand interact — both triggers only ever
+        # fire right hand interact. We send whichever trigger is more pressed
+        # on RT so either hand's trigger works for interact.
+        # Use max(analog, digital) to prevent pulsing on BLE packet loss —
+        # BTN_TRIGGER (digital bit) and trigger_analog can arrive in separate
+        # packets, so take the highest value seen between the two.
+        trig_r = max(right.trigger_float, 1.0 if (right.buttons & BTN_TRIGGER) else 0.0)
+        trig_l = max(left.trigger_float,  1.0 if (left.buttons  & BTN_TRIGGER) else 0.0)
+        combined_trigger = max(trig_l, trig_r)
+        gp.right_trigger_float(value_float=combined_trigger)
+        gp.left_trigger_float(value_float=trig_l)  # kept for world scripts
 
         # ── Right hand ──
         if right.buttons & BTN_JCLICK:
