@@ -765,7 +765,123 @@ class GamepadMode:
             self.gamepad.update()
 
 
-# ── GUI Application ──────────────────────────────────────────────────────
+# ── Gamepad Mode — VRChat optimised ──────────────────────────────────────
+
+class GamepadModeVRChat:
+    """
+    ViGEm Xbox 360 gamepad with VRChat-optimal button mapping.
+
+    VRChat gamepad layout (Xbox reference):
+      Left  stick          → Move (head-relative in VR)
+      Right stick X        → Smooth turn
+      Right stick Y        → Look up/down
+      RT (right trigger)   → Use / Interact  (right hand)
+      LT (left trigger)    → Use / Interact  (left hand)
+      A                    → Jump
+      B / Y                → Quick Menu
+      R3 (right stick click) → Action Menu
+      L3 (left  stick click) → Action Menu (left)
+      X                    → Mute toggle
+
+    CyberFinger → Xbox mapping:
+      Right TRIGGER  → RT  (use/interact right)
+      Left  TRIGGER  → LT  (use/interact left)
+      Right GRIP     → A   (jump)
+      Left  GRIP     → B   (quick menu)
+      Right MENU     → Y   (quick menu right)
+      Left  MENU     → X   (mute)
+      Right JCLICK   → R3  (action menu right)
+      Left  JCLICK   → L3  (action menu left)
+      Right C        → RB  (extra / world-specific)
+      Left  C        → LB  (extra / world-specific)
+      Right D        → DPAD_RIGHT
+      Left  D        → DPAD_LEFT
+      Right E / Left E → DPAD_UP / DPAD_DOWN
+      ST/SE (either) → Start
+    """
+
+    def __init__(self):
+        self.gamepad = None
+        self.available = False
+        try:
+            import vgamepad as vg
+            self.vg = vg
+            self.gamepad = vg.VX360Gamepad()
+            self.available = True
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+    def on_input(self, hand, state):
+        pass  # update_gamepad called by app
+
+    def update_gamepad(self, left, right):
+        if not self.available:
+            return
+        vg = self.vg
+        gp = self.gamepad
+
+        gp.reset()
+
+        # ── Sticks ────────────────────────────────────────────────────
+        # Left  X → strafe,       Left  Y → move fwd/back
+        # Right X → turn,         Right Y → move fwd/back (NOT look up/down —
+        #   looking up/down with a stick is nauseating in VR)
+        # VRChat gamepad: left stick Y drives vertical movement axis,
+        # right stick Y also feeds into forward/back (take larger magnitude).
+        fwd = -left.joy_y_float
+        fwd_r = -right.joy_y_float
+        combined_fwd = fwd if abs(fwd) >= abs(fwd_r) else fwd_r
+
+        gp.left_joystick_float(x_value_float=left.joy_x_float,
+                               y_value_float=combined_fwd)
+        # Right stick X = turn; Y = 0 (suppress look up/down)
+        gp.right_joystick_float(x_value_float=right.joy_x_float,
+                                y_value_float=0.0)
+
+        # ── Triggers → Use/Interact (analog) ──
+        gp.left_trigger_float(value_float=left.trigger_float)
+        gp.right_trigger_float(value_float=right.trigger_float)
+
+        # ── Right hand ──
+        if right.buttons & BTN_JCLICK:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)              # Jump
+        if right.buttons & BTN_MENU:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)              # Quick menu
+        if right.buttons & BTN_GRIP:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB)   # Action menu R
+        if right.buttons & BTN_C:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER) # RB (extra)
+        if right.buttons & BTN_D:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT)
+        if right.buttons & BTN_E:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP)
+        if right.buttons & BTN_STSEL:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_START)
+
+        # ── Left hand ──
+        if left.buttons & BTN_JCLICK:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)             # Quick menu
+        if left.buttons & BTN_MENU:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)             # Mute
+        if left.buttons & BTN_GRIP:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB)    # Action menu L
+        if left.buttons & BTN_C:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER) # LB (extra)
+        if left.buttons & BTN_D:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT)
+        if left.buttons & BTN_E:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN)
+        if left.buttons & BTN_STSEL:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK)
+
+        gp.update()
+
+    def stop(self):
+        if self.gamepad:
+            self.gamepad.reset()
+            self.gamepad.update()
 
 class CyberFingerApp:
     def __init__(self):
@@ -798,6 +914,7 @@ class CyberFingerApp:
         self.ble = BLEManager(self)
         self.vr_mode = VRMode()
         self.gamepad_mode = GamepadMode()
+        self.vrchat_gamepad_mode = GamepadModeVRChat()
         self.vrchat_osc_mode = VRChatOSCMode()
         self.active_mode = None
 
@@ -974,8 +1091,10 @@ class CyberFingerApp:
         radio_frame.pack(side=tk.LEFT)
         ttk.Radiobutton(radio_frame, text="VR Mode (BLE→SteamVR)",
                         variable=self.mode_var, value="vr").pack(anchor=tk.W)
-        ttk.Radiobutton(radio_frame, text="Gamepad Mode (BLE→Xbox 360)",
+        ttk.Radiobutton(radio_frame, text="Gamepad Mode (BLE→Xbox 360, Resonite)",
                         variable=self.mode_var, value="gamepad").pack(anchor=tk.W)
+        ttk.Radiobutton(radio_frame, text="Gamepad Mode (BLE→Xbox 360, VRChat)",
+                        variable=self.mode_var, value="gamepad_vrc").pack(anchor=tk.W)
         ttk.Radiobutton(radio_frame, text="VRChat OSC (BLE→OSC:9000)",
                         variable=self.mode_var, value="vrchat").pack(anchor=tk.W)
 
@@ -1033,7 +1152,7 @@ class CyberFingerApp:
             return  # Already running
 
         mode = self.mode_var.get()
-        if mode == "gamepad" and not self.gamepad_mode.available:
+        if mode in ("gamepad", "gamepad_vrc") and not self.gamepad_mode.available:
             self.log("ERROR: vgamepad not available!")
             self.log("Install: pip install vgamepad")
             self.log("Also need ViGEmBus driver")
@@ -1043,7 +1162,6 @@ class CyberFingerApp:
             self.log("Install: pip install python-osc")
             return
 
-        # Save settings
         self._config["mode"] = mode
         self._config["autostart"] = self.autostart_var.get()
         self._save_config()
@@ -1052,6 +1170,8 @@ class CyberFingerApp:
             self.active_mode = self.vr_mode
         elif mode == "gamepad":
             self.active_mode = self.gamepad_mode
+        elif mode == "gamepad_vrc":
+            self.active_mode = self.vrchat_gamepad_mode
         else:
             self.active_mode = self.vrchat_osc_mode
         self.log(f"Starting {mode.upper()} mode...")
@@ -1087,12 +1207,13 @@ class CyberFingerApp:
         self.ble = BLEManager(self)
         if self.gamepad_mode.available:
             self.gamepad_mode = GamepadMode()
+            self.vrchat_gamepad_mode = GamepadModeVRChat()
         self.vrchat_osc_mode = VRChatOSCMode()
 
     def on_input(self, hand, state):
         """Called from BLE thread on each input report."""
         if self.active_mode:
-            if isinstance(self.active_mode, GamepadMode):
+            if isinstance(self.active_mode, (GamepadMode, GamepadModeVRChat)):
                 self.active_mode.update_gamepad(self.ble.left, self.ble.right)
             elif isinstance(self.active_mode, VRChatOSCMode):
                 self.active_mode.update_osc(self.ble.left, self.ble.right)
