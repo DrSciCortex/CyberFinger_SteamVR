@@ -813,6 +813,32 @@ class GamepadModeVRChat:
         except Exception:
             pass
 
+        # OSC client for per-hand UseLeft/UseRight — VRChat gamepad mode has
+        # no separate left hand interact, but OSC UseLeft/UseRight works in VR
+        # and can run simultaneously alongside the gamepad input.
+        self._osc = None
+        try:
+            from pythonosc import udp_client
+            self._osc = udp_client.SimpleUDPClient("127.0.0.1", 9000)
+        except ImportError:
+            pass
+
+        self._prev_use_r = False
+        self._prev_use_l = False
+        self._prev_grab_r = False
+        self._prev_grab_l = False
+        self._grab_right_toggled = False
+        self._grab_left_toggled  = False
+        self._grab_right_press_time = 0.0
+        self._grab_left_press_time  = 0.0
+
+    def _osc_send(self, address, value):
+        if self._osc:
+            try:
+                self._osc.send_message(address, value)
+            except Exception:
+                pass
+
     def on_input(self, hand, state):
         pass  # update_gamepad called by app
 
@@ -825,38 +851,67 @@ class GamepadModeVRChat:
         gp.reset()
 
         # ── Sticks ────────────────────────────────────────────────────
-        # Left  X/Y → strafe / move fwd/back
-        # Right X/Y → full passthrough: X=turn, Y=action menu selection
-        #   (VRChat uses right stick Y for action menu flick selection,
-        #    so we must not zero it out)
         gp.left_joystick_float(x_value_float=left.joy_x_float,
                                y_value_float=-left.joy_y_float)
         gp.right_joystick_float(x_value_float=right.joy_x_float,
                                 y_value_float=-right.joy_y_float)
 
-        # ── Triggers → Use/Interact ────────────────────────────────────
-        # VRChat gamepad limitation (confirmed, unfixed since 2022):
-        # LT does NOT trigger left hand interact — both triggers only ever
-        # fire right hand interact. We send whichever trigger is more pressed
-        # on RT so either hand's trigger works for interact.
-        # Use max(analog, digital) to prevent pulsing on BLE packet loss —
-        # BTN_TRIGGER (digital bit) and trigger_analog can arrive in separate
-        # packets, so take the highest value seen between the two.
+        # ── Triggers ───────────────────────────────────────────────────
+        # Right trigger → RT (gamepad, right hand interact)
+        # Left  trigger → OSC /input/UseLeft only (no LT gamepad — avoids
+        #                 duplicate/conflicting events with right hand)
         trig_r = max(right.trigger_float, 1.0 if (right.buttons & BTN_TRIGGER) else 0.0)
         trig_l = max(left.trigger_float,  1.0 if (left.buttons  & BTN_TRIGGER) else 0.0)
-        combined_trigger = max(trig_l, trig_r)
-        gp.right_trigger_float(value_float=combined_trigger)
-        gp.left_trigger_float(value_float=trig_l)  # kept for world scripts
+        gp.right_trigger_float(value_float=trig_r)
+        gp.left_trigger_float(value_float=0.0)      # suppressed — UseLeft via OSC
 
-        # ── Right hand ──
+        # ── OSC: UseLeft (left trigger) — no gamepad equivalent ────────
+        use_l = trig_l > 0.1
+        if use_l != self._prev_use_l:
+            self._osc_send("/input/UseLeft", int(use_l))
+            self._prev_use_l = use_l
+
+        # ── OSC: GrabRight / GrabLeft (button 2 = GRIP) ────────────────
+        # Tap  (<200ms): toggle grab state
+        # Hold (≥200ms): release on finger-up
+        grab_r = bool(right.buttons & BTN_GRIP)
+        grab_l = bool(left.buttons  & BTN_GRIP)
+
+        if grab_r and not self._prev_grab_r:
+            self._grab_right_press_time = time.time()
+            self._osc_send("/input/GrabRight", 1)
+        elif not grab_r and self._prev_grab_r:
+            held_ms = (time.time() - self._grab_right_press_time) * 1000
+            if held_ms < 200:
+                self._grab_right_toggled = not self._grab_right_toggled
+                self._osc_send("/input/GrabRight", int(self._grab_right_toggled))
+            else:
+                self._grab_right_toggled = False
+                self._osc_send("/input/GrabRight", 0)
+
+        if grab_l and not self._prev_grab_l:
+            self._grab_left_press_time = time.time()
+            self._osc_send("/input/GrabLeft", 1)
+        elif not grab_l and self._prev_grab_l:
+            held_ms = (time.time() - self._grab_left_press_time) * 1000
+            if held_ms < 200:
+                self._grab_left_toggled = not self._grab_left_toggled
+                self._osc_send("/input/GrabLeft", int(self._grab_left_toggled))
+            else:
+                self._grab_left_toggled = False
+                self._osc_send("/input/GrabLeft", 0)
+
+        self._prev_grab_r = grab_r
+        self._prev_grab_l = grab_l
+
+        # ── Right hand (gamepad) ────────────────────────────────────────
         if right.buttons & BTN_JCLICK:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)              # Jump
         if right.buttons & BTN_MENU:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)              # Quick menu
-        if right.buttons & BTN_GRIP:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB)   # Action menu R
+        # BTN_GRIP → OSC GrabRight (no gamepad event)
         if right.buttons & BTN_C:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER) # RB (extra)
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)              # Quick menu R
         if right.buttons & BTN_D:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT)
         if right.buttons & BTN_E:
@@ -864,15 +919,14 @@ class GamepadModeVRChat:
         if right.buttons & BTN_STSEL:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_START)
 
-        # ── Left hand ──
+        # ── Left hand (gamepad) — left trigger suppressed, handled by OSC ──
         if left.buttons & BTN_JCLICK:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)             # Quick menu
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)             # Quick menu L
         if left.buttons & BTN_MENU:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)             # Mute
-        if left.buttons & BTN_GRIP:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB)    # Action menu L
+        # BTN_GRIP → OSC GrabLeft (no gamepad event)
         if left.buttons & BTN_C:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER) # LB (extra)
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)             # Mute
         if left.buttons & BTN_D:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT)
         if left.buttons & BTN_E:
@@ -886,8 +940,10 @@ class GamepadModeVRChat:
         if self.gamepad:
             self.gamepad.reset()
             self.gamepad.update()
+        for addr in ("/input/UseLeft", "/input/GrabRight", "/input/GrabLeft"):
+            self._osc_send(addr, 0)
 
-class CyberFingerApp:
+
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("CyberFinger Bridge")
