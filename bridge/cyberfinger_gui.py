@@ -918,7 +918,7 @@ class CyberFingerApp:
         self.ble = BLEManager(self)
         self.vr_mode = VRMode()
         self.gamepad_mode = GamepadMode()
-        self.vrchat_gamepad_mode = GamepadModeVRChat()
+        self.vrchat_gamepad_mode = None  # created lazily on first use
         self.vrchat_osc_mode = VRChatOSCMode()
         self.active_mode = None
 
@@ -1175,6 +1175,8 @@ class CyberFingerApp:
         elif mode == "gamepad":
             self.active_mode = self.gamepad_mode
         elif mode == "gamepad_vrc":
+            # Create fresh instance now — avoids a second idle ViGEm device
+            self.vrchat_gamepad_mode = GamepadModeVRChat()
             self.active_mode = self.vrchat_gamepad_mode
         else:
             self.active_mode = self.vrchat_osc_mode
@@ -1211,7 +1213,7 @@ class CyberFingerApp:
         self.ble = BLEManager(self)
         if self.gamepad_mode.available:
             self.gamepad_mode = GamepadMode()
-            self.vrchat_gamepad_mode = GamepadModeVRChat()
+        self.vrchat_gamepad_mode = None  # will be recreated lazily on next start
         self.vrchat_osc_mode = VRChatOSCMode()
 
     def on_input(self, hand, state):
