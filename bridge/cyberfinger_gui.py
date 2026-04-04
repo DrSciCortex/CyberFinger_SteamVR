@@ -976,7 +976,7 @@ class CyberFingerApp:
 
         self.ble = BLEManager(self)
         self.vr_mode = VRMode()
-        self.gamepad_mode = GamepadMode()
+        self.gamepad_mode = None         # created lazily on first use
         self.vrchat_gamepad_mode = None  # created lazily on first use
         self.vrchat_osc_mode = VRChatOSCMode()
         self.active_mode = None
@@ -1215,11 +1215,14 @@ class CyberFingerApp:
             return  # Already running
 
         mode = self.mode_var.get()
-        if mode in ("gamepad", "gamepad_vrc") and not self.gamepad_mode.available:
-            self.log("ERROR: vgamepad not available!")
-            self.log("Install: pip install vgamepad")
-            self.log("Also need ViGEmBus driver")
-            return
+        if mode in ("gamepad", "gamepad_vrc"):
+            try:
+                import vgamepad  # noqa — just check it's importable
+            except ImportError:
+                self.log("ERROR: vgamepad not available!")
+                self.log("Install: pip install vgamepad")
+                self.log("Also need ViGEmBus driver")
+                return
         if mode == "vrchat" and not self.vrchat_osc_mode.available:
             self.log("ERROR: python-osc not available!")
             self.log("Install: pip install python-osc")
@@ -1232,9 +1235,9 @@ class CyberFingerApp:
         if mode == "vr":
             self.active_mode = self.vr_mode
         elif mode == "gamepad":
+            self.gamepad_mode = GamepadMode()
             self.active_mode = self.gamepad_mode
         elif mode == "gamepad_vrc":
-            # Create fresh instance now — avoids a second idle ViGEm device
             self.vrchat_gamepad_mode = GamepadModeVRChat()
             self.active_mode = self.vrchat_gamepad_mode
         else:
@@ -1270,9 +1273,8 @@ class CyberFingerApp:
 
         # Recreate for next start
         self.ble = BLEManager(self)
-        if self.gamepad_mode.available:
-            self.gamepad_mode = GamepadMode()
-        self.vrchat_gamepad_mode = None  # will be recreated lazily on next start
+        self.gamepad_mode = None         # recreated lazily on next start
+        self.vrchat_gamepad_mode = None  # recreated lazily on next start
         self.vrchat_osc_mode = VRChatOSCMode()
 
     def on_input(self, hand, state):
@@ -1324,7 +1326,11 @@ class CyberFingerApp:
 
     def run(self):
         self.log("CyberFinger Bridge ready")
-        self.log(f"Gamepad mode: {'available' if self.gamepad_mode.available else 'not available (install vgamepad)'}")
+        try:
+            import vgamepad  # noqa
+            self.log("Gamepad mode: available")
+        except ImportError:
+            self.log("Gamepad mode: not available (install vgamepad + ViGEmBus)")
         self.log(f"VRChat OSC mode: {'available' if self.vrchat_osc_mode.available else 'not available (install python-osc)'}")
         if not HAS_TRAY:
             self.log("System tray: not available (install pystray pillow)")
