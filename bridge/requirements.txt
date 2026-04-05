@@ -18,5 +18,8 @@ vgamepad
 # for vrchat osc mode
 python-osc
 
+#for generating keyboard events
+pynput
+
 # Build tools (only needed for creating the .exe)
 # pyinstaller
