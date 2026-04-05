@@ -30,6 +30,13 @@ try:
 except ImportError:
     HAS_TRAY = False
 
+try:
+    from pynput.keyboard import Key, Controller as KeyboardController
+    _keyboard = KeyboardController()
+    HAS_PYNPUT = True
+except ImportError:
+    HAS_PYNPUT = False
+
 # ── BLE protocol ─────────────────────────────────────────────────────────
 
 VR_SERVICE_UUID = "0000cf00-0000-1000-8000-00805f9b34fb"
@@ -630,6 +637,11 @@ class GamepadModeVRChat:
         self._grab_left_toggled  = False
         self._grab_right_press_time = 0.0
         self._grab_left_press_time  = 0.0
+        self._prev_jclick_r = False
+        self._prev_jclick_l = False
+        self._prev_stsel_l  = False
+        self._prev_stsel_r  = False
+        self._prev_c_r      = False
 
     def _osc_send(self, address, value):
         if self._osc:
@@ -703,26 +715,44 @@ class GamepadModeVRChat:
         self._prev_grab_r = grab_r
         self._prev_grab_l = grab_l
 
+        # ── Stick clicks ───────────────────────────────────────────────
+        # Right jclick → Jump (gamepad A)
+        # Left  jclick → Jump (gamepad A, same button — either hand jumps)
+        jclick_r = bool(right.buttons & BTN_JCLICK)
+        jclick_l = bool(left.buttons  & BTN_JCLICK)
+        if jclick_r or jclick_l:
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)
+        self._prev_jclick_r = jclick_r
+        self._prev_jclick_l = jclick_l
+
         # ── Right hand (gamepad) ────────────────────────────────────────
-        if right.buttons & BTN_JCLICK:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)              # Jump
         if right.buttons & BTN_MENU:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB)   # Action menu R
-        # BTN_GRIP → OSC GrabRight (no gamepad event)
-        if right.buttons & BTN_C:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)              # Quick menu R
+        # ── Right C → F12 screenshot (rising edge) ─────────────────────
+        c_r = bool(right.buttons & BTN_C)
+        if c_r and not self._prev_c_r:
+            if HAS_PYNPUT:
+                try:
+                    _keyboard.press(Key.f12)
+                    _keyboard.release(Key.f12)
+                except Exception:
+                    pass
+        self._prev_c_r = c_r
         if right.buttons & BTN_D:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT)
         if right.buttons & BTN_E:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP)
-        if right.buttons & BTN_STSEL:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_START)
+        # Right ST/SE → open VRChat chatbox keyboard (rising edge)
+        stsel_r = bool(right.buttons & BTN_STSEL)
+        if stsel_r and not self._prev_stsel_r:
+            # b=False opens the keyboard, n=False suppresses notification SFX
+            self._osc_send("/chatbox/input", ["", False, False])
+        self._prev_stsel_r = stsel_r
 
-        # ── Left hand (gamepad) — left trigger suppressed, handled by OSC ──
-        if left.buttons & BTN_JCLICK:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)             # Quick menu L
+        # ── Left hand (gamepad + OSC) ────────────────────────────────────
+        # Left MENU → Start (Quick Menu, gamepad)
         if left.buttons & BTN_MENU:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB)    # Action menu L
+            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_START)
         # BTN_GRIP → OSC GrabLeft (no gamepad event)
         if left.buttons & BTN_C:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)             # Mute
@@ -730,8 +760,11 @@ class GamepadModeVRChat:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT)
         if left.buttons & BTN_E:
             gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN)
-        if left.buttons & BTN_STSEL:
-            gp.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK)
+        # ST/SE → /input/Voice mute toggle: 1 on press, 0 on release
+        stsel_l = bool(left.buttons & BTN_STSEL)
+        if stsel_l != self._prev_stsel_l:
+            self._osc_send("/input/Voice", int(stsel_l))
+        self._prev_stsel_l = stsel_l
 
         gp.update()
 
@@ -739,7 +772,8 @@ class GamepadModeVRChat:
         if self.gamepad:
             self.gamepad.reset()
             self.gamepad.update()
-        for addr in ("/input/UseLeft", "/input/GrabRight", "/input/GrabLeft"):
+        for addr in ("/input/UseLeft", "/input/GrabRight", "/input/GrabLeft",
+                     "/input/QuickMenuToggleRight", "/input/Voice"):
             self._osc_send(addr, 0)
 
 
@@ -1122,6 +1156,8 @@ class CyberFingerApp:
             self.log("Gamepad mode: not available (install vgamepad + ViGEmBus)")
         if not HAS_TRAY:
             self.log("System tray: not available (install pystray pillow)")
+        if not HAS_PYNPUT:
+            self.log("Keyboard (F12 screenshot): not available (install pynput)")
         self.root.mainloop()
 
 
