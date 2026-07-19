@@ -21,5 +21,9 @@ python-osc
 #for generating keyboard events
 pynput
 
+# Hand skeleton display (optional) — reads the skeleton SteamVR is tracking,
+# e.g. Steam Link hand tracking, via OpenVR skeletal input
+openvr
+
 # Build tools (only needed for creating the .exe)
 # pyinstaller

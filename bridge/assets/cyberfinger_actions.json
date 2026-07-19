@@ -1,0 +1,38 @@
+{
+  "default_bindings": [
+    {
+      "controller_type": "knuckles",
+      "binding_url": "cyberfinger_bindings_knuckles.json"
+    },
+    {
+      "controller_type": "oculus_touch",
+      "binding_url": "cyberfinger_bindings_oculus_touch.json"
+    }
+  ],
+  "action_sets": [
+    {
+      "name": "/actions/cyberfinger",
+      "usage": "leftright"
+    }
+  ],
+  "actions": [
+    {
+      "name": "/actions/cyberfinger/in/skeleton_left",
+      "type": "skeleton",
+      "skeleton": "/skeleton/hand/left"
+    },
+    {
+      "name": "/actions/cyberfinger/in/skeleton_right",
+      "type": "skeleton",
+      "skeleton": "/skeleton/hand/right"
+    }
+  ],
+  "localization": [
+    {
+      "language_tag": "en_US",
+      "/actions/cyberfinger": "CyberFinger Bridge",
+      "/actions/cyberfinger/in/skeleton_left": "Left Hand Skeleton",
+      "/actions/cyberfinger/in/skeleton_right": "Right Hand Skeleton"
+    }
+  ]
+}

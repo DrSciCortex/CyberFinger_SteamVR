@@ -38,6 +38,15 @@ try:
 except ImportError:
     HAS_PYNPUT = False
 
+# pyopenvr — used to read the hand skeleton SteamVR itself is tracking (e.g.
+# Steam Link camera hand tracking). Broad except: the import can also fail on
+# a missing openvr_api.dll, not just an absent package.
+try:
+    import openvr
+    HAS_OPENVR = True
+except Exception:
+    HAS_OPENVR = False
+
 # ── BLE protocol ─────────────────────────────────────────────────────────
 
 VR_SERVICE_UUID = "0000cf00-0000-1000-8000-00805f9b34fb"
@@ -958,6 +967,572 @@ class SlimeVRForwarder:
             tracker.send_battery(state.battery)
 
 
+# ── Runtime hand skeleton (display only) ─────────────────────────────────
+#
+# Reads the 31-bone hand skeleton the VR runtime is tracking — e.g. Steam
+# Link's camera-based hand tracking — for display under each hand panel.
+#
+# Backend contract (duck-typed, like the bridge modes): .start(), .stop(),
+# .status (short string for the panel placeholder), and .hands — a 2-list
+# indexed by hand (0=left, 1=right) holding either None or a tuple of
+# (x, y, z) joint positions in a wrist-origin space. Backends swap whole
+# tuples in atomically, so readers need no lock.
+#
+# Windows backend is OpenVR skeletal input: its Background app type attaches
+# to a running SteamVR without a graphics session and without contending with
+# the focused game — something OpenXR on SteamVR cannot do yet (no headless,
+# XR_EXTX_overlay still provisional). An OpenXR backend for bridge_linux /
+# Monado can slot into create_skeleton_source() when that lands.
+
+# Hand skeleton indices: 0 root/palm, 1 wrist, then five finger chains off
+# the wrist, tips at 5/10/15/20/25. This layout is shared by SteamVR's native
+# 31-bone skeleton (26-30 are aux bones, ignored) and the 26-bone OpenXR-style
+# set Steam Link reports; bone count itself is queried from the runtime.
+SKELETON_CHAINS = (
+    (1, 2, 3, 4, 5),          # thumb
+    (1, 6, 7, 8, 9, 10),      # index
+    (1, 11, 12, 13, 14, 15),  # middle
+    (1, 16, 17, 18, 19, 20),  # ring
+    (1, 21, 22, 23, 24, 25),  # pinky
+)
+SKELETON_TIPS = frozenset((5, 10, 15, 20, 25))
+
+SKELETON_ACTION_SET = "/actions/cyberfinger"
+SKELETON_ACTIONS = ("/actions/cyberfinger/in/skeleton_left",
+                    "/actions/cyberfinger/in/skeleton_right")
+
+SKELETON_APP_KEY = "drscicortex.cyberfinger.bridge"
+
+# VR events worth narrating in the console — resolved by name at runtime so a
+# pyopenvr build lacking one just skips it.
+_SKELETON_EVENTS = (
+    "VREvent_TrackedDeviceActivated",
+    "VREvent_TrackedDeviceDeactivated",
+    "VREvent_TrackedDeviceRoleChanged",
+    "VREvent_TrackedDeviceUserInteractionStarted",   # headset put on
+    "VREvent_TrackedDeviceUserInteractionEnded",     # headset taken off
+    "VREvent_EnterStandbyMode",
+    "VREvent_LeaveStandbyMode",
+    "VREvent_Input_BindingLoadFailed",
+    "VREvent_Input_BindingLoadSuccessful",
+    "VREvent_Input_ActionManifestReloaded",
+)
+
+_HMD_ACTIVITY_LEVELS = {
+    "k_EDeviceActivityLevel_Unknown": "activity unknown",
+    "k_EDeviceActivityLevel_Idle": "idle (not worn)",
+    "k_EDeviceActivityLevel_UserInteraction": "active (worn)",
+    "k_EDeviceActivityLevel_UserInteraction_Timeout": "recently active",
+    "k_EDeviceActivityLevel_Standby": "standby",
+    "k_EDeviceActivityLevel_Idle_Timeout": "idle timeout",
+}
+
+
+STEAMVR_SETTINGS_PATH = os.path.join(
+    os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+    "Steam", "config", "steamvr.vrsettings")
+
+
+def _clean_pinned_bindings_offline(log):
+    """Drop workshop binding pins for our app key from steamvr.vrsettings.
+
+    SteamVR's binding UI can autosave a legacy workshop binding as this app's
+    pinned selection, which silently disables our skeleton actions (see
+    _check_pinned_binding). Editing the file is only safe while vrserver is
+    down — it rewrites the file on exit — so this runs from the retry path
+    after openvr.init fails. Only vr-input-workshop:// pins are dropped; a
+    deliberately hand-picked local binding survives. Returns True if the file
+    was changed.
+    """
+    try:
+        with open(STEAMVR_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return False
+    section = data.get(SKELETON_APP_KEY)
+    if not isinstance(section, dict):
+        return False
+    removed = []
+    for key in list(section.keys()):
+        if not key.endswith("_steamvrinput"):
+            continue
+        val = section[key]
+        if isinstance(val, str) and not val.startswith("vr-input-workshop://"):
+            continue  # a non-workshop pin was chosen on purpose; keep it
+        removed.append(key)
+        del section[key]
+    if not removed:
+        return False
+    if not section:
+        del data[SKELETON_APP_KEY]
+    try:
+        tmp = STEAMVR_SETTINGS_PATH + ".cyberfinger.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=3)
+        os.replace(tmp, STEAMVR_SETTINGS_PATH)
+    except Exception as e:
+        log(f"Skeleton: could not clean steamvr.vrsettings: {e!r}")
+        return False
+    log(f"Skeleton: removed stale binding pin(s) from steamvr.vrsettings: "
+        + ", ".join(removed))
+    return True
+
+
+def _write_app_manifest():
+    """Write a .vrmanifest reflecting how this process was actually launched.
+
+    Registering it (plus identifyApplication) is what makes SteamVR show
+    "CyberFinger Bridge" in Manage Controller Bindings instead of filing us
+    under an auto-generated "python.exe" key. Generated at runtime because the
+    truthful binary path differs between `python cyberfinger_gui.py` and the
+    PyInstaller exe. Returns the manifest path.
+    """
+    if getattr(sys, "frozen", False):
+        binary, arguments = sys.executable, ""
+    else:
+        binary = sys.executable
+        arguments = f'"{os.path.abspath(sys.argv[0])}"'
+    manifest = {
+        "applications": [{
+            "app_key": SKELETON_APP_KEY,
+            "launch_type": "binary",
+            "binary_path_windows": binary,
+            "arguments": arguments,
+            "is_dashboard_overlay": False,
+            "strings": {
+                "en_us": {
+                    "name": "CyberFinger Bridge",
+                    "description": "CyberFinger glove bridge — hand skeleton display",
+                },
+            },
+        }],
+    }
+    cfg_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                           "CyberFingerBridge")
+    os.makedirs(cfg_dir, exist_ok=True)
+    path = os.path.join(cfg_dir, "cyberfinger.vrmanifest")
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    return path
+
+
+def create_skeleton_source(log=None, bisect=False):
+    """Pick the skeleton backend for this platform, or None if unavailable.
+
+    bisect=True ("skeleton_bisect" in settings.json) brings the OpenVR
+    session up in staged steps with 20 s holds, so if SteamVR falls over the
+    last stage announced in the console names the culprit.
+    """
+    if HAS_OPENVR:
+        return OpenVRSkeletonSource(log, bisect=bisect)
+    return None
+
+
+class OpenVRSkeletonSource:
+    """Polls SteamVR for hand skeletons in a background thread.
+
+    Connects as a Background app so it never launches SteamVR itself; while
+    SteamVR is down it just retries quietly.
+    """
+
+    RETRY_S = 5.0
+    HOLD_S = 20.0  # per-stage hold in bisect mode
+
+    def __init__(self, log=None, bisect=False):
+        self._log = log or (lambda msg: None)
+        self._bisect = bisect
+        self._poll_actions = True
+        self._ready_at = 0.0
+        self.hands = [None, None]   # 0 = left, 1 = right
+        self.status = "starting..."
+        self._running = False
+        self._thread = None
+        self._ready = False
+        self._logged_waiting = False
+        self._offline_cleaned = False
+        self._vrin = None
+        self._system = None
+        self._actions = [None, None]
+        self._action_set = None
+        self._event_names = {getattr(openvr, n): n[8:] for n in _SKELETON_EVENTS
+                             if hasattr(openvr, n)}
+        self._activity_names = {getattr(openvr, k): v
+                                for k, v in _HMD_ACTIVITY_LEVELS.items()
+                                if hasattr(openvr, k)}
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+        self._teardown()
+
+    # ── OpenVR session ──
+
+    def _init_openvr(self):
+        self._stage_connect()
+        self._hold("1/5 client connected (idle)")
+        self._stage_identity()
+        self._hold("2/5 app identity registered")
+        self._stage_actions()
+        self._hold("3/5 action manifest + handles loaded")
+
+        # In bisect mode stage 4 is passive polling (events + HMD activity
+        # only); _loop promotes to stage 5 (action polling) after the hold.
+        self._poll_actions = not self._bisect
+        self._ready = True
+        self._ready_at = time.time()
+        self.status = "connected"
+        self._connected_at = time.time()
+        self._hand_active = [None, None]   # tri-state: unknown / False / True
+        self._ever_active = False
+        self._bone_count = [0, 0]
+        self._err_logged = [False, False]
+        self._hmd_activity = None
+        self._last_diag = time.time()
+        self._inactive_since = None
+        self._ctype_logged = {}
+        self._logged_waiting = False
+        self._log("Skeleton: connected to SteamVR")
+        if self._bisect:
+            self._log("Skeleton BISECT: stage 4/5 passive polling "
+                      f"(events + HMD activity) — holding {int(self.HOLD_S)} s")
+        self._log_controller_types()
+
+    def _stage_connect(self):
+        openvr.init(openvr.VRApplication_Background)
+        self._system = openvr.VRSystem()
+        self._vrin = openvr.VRInput()
+
+    def _stage_identity(self):
+        # Identify as our own app key so SteamVR's binding UI lists us as
+        # "CyberFinger Bridge" rather than an auto-generated python.exe entry.
+        # Best-effort: skeleton reading works without it, rebinding does not.
+        try:
+            vrapps = openvr.VRApplications()
+            vrapps.addApplicationManifest(_write_app_manifest(), True)  # temporary
+            vrapps.identifyApplication(os.getpid(), SKELETON_APP_KEY)
+        except Exception as e:
+            self._log(f"Skeleton: app identity registration failed: {e!r}")
+
+    def _stage_actions(self):
+        self._manifest_path = resource_path(
+            os.path.join("assets", "cyberfinger_actions.json"))
+        self._vrin.setActionManifestPath(self._manifest_path)
+        self._action_set = self._vrin.getActionSetHandle(SKELETON_ACTION_SET)
+        self._actions = [self._vrin.getActionHandle(a) for a in SKELETON_ACTIONS]
+
+    def _hold(self, label):
+        """In bisect mode, announce the stage and idle through its window so a
+        SteamVR-side death lands unambiguously inside one stage."""
+        if not self._bisect:
+            return
+        self._log(f"Skeleton BISECT: stage {label} — holding {int(self.HOLD_S)} s")
+        deadline = time.time() + self.HOLD_S
+        while self._running and time.time() < deadline:
+            time.sleep(0.2)
+        if not self._running:
+            raise RuntimeError("stopped during bisect hold")
+
+    def _log_controller_types(self):
+        """Log each hand's controller type — this is the string a binding file
+        must name, so it is the first thing to check when nothing draws."""
+        for role, name in ((openvr.TrackedControllerRole_LeftHand, "L"),
+                           (openvr.TrackedControllerRole_RightHand, "R")):
+            try:
+                idx = self._system.getTrackedDeviceIndexForControllerRole(role)
+                if idx == openvr.k_unTrackedDeviceIndexInvalid:
+                    continue
+                ctype = self._system.getStringTrackedDeviceProperty(
+                    idx, openvr.Prop_ControllerType_String)
+            except Exception:
+                continue
+            if ctype and ctype != self._ctype_logged.get(name):
+                self._ctype_logged[name] = ctype
+                self._log(f"Skeleton: {name} controller type '{ctype}'")
+                self._check_pinned_binding(ctype)
+
+    def _check_pinned_binding(self, ctype):
+        """Warn if a saved workshop binding pins this controller type.
+
+        Opening SteamVR's binding UI on an app can autosave a legacy workshop
+        binding as the app's "current" selection (steamvr.vrsettings, key
+        <ctype>_250820_CurrentURL_steamvrinput). A pin overrides our
+        default_bindings entirely, and a legacy binding carries no skeleton
+        actions — so the skeleton goes permanently inactive with no error
+        anywhere.
+
+        Reads the settings FILE, never the IVRSettings API: every vrserver
+        c0000005 today followed an IVRSettings call from this client within
+        seconds (getString included), while runs without any settings IPC were
+        crash-free — so this client does not speak IVRSettings at all. Repair
+        also happens on the file, offline — see
+        _clean_pinned_bindings_offline, run while SteamVR is down.
+        """
+        try:
+            with open(STEAMVR_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                section = json.load(f).get(SKELETON_APP_KEY, {})
+            val = section.get(f"{ctype}_250820_CurrentURL_steamvrinput")
+        except Exception:
+            return
+        if val and str(val).startswith("vr-input-workshop://"):
+            self._log(f"Skeleton: WARNING — saved binding {val} overrides the "
+                      f"defaults for '{ctype}'; skeleton will stay inactive. "
+                      "Fix: close SteamVR and relaunch this bridge (auto-clean), "
+                      "or pick the CyberFinger default binding in SteamVR.")
+
+    def _teardown(self):
+        self._ready = False
+        self.hands = [None, None]
+        self._vrin = None
+        self._system = None
+        try:
+            openvr.shutdown()
+        except Exception:
+            pass
+
+    def _loop(self):
+        while self._running:
+            if not self._ready:
+                try:
+                    self._init_openvr()
+                except Exception:
+                    self._teardown()
+                    self.status = "SteamVR not running"
+                    if not self._logged_waiting:
+                        self._logged_waiting = True
+                        self._log("Skeleton: SteamVR not running, will retry")
+                    # With vrserver down it is safe to sweep out any stale
+                    # workshop binding pin that would mute the skeleton.
+                    if not self._offline_cleaned:
+                        self._offline_cleaned = True
+                        try:
+                            _clean_pinned_bindings_offline(self._log)
+                        except Exception:
+                            pass
+                    # Sleep in short slices so stop() stays responsive.
+                    deadline = time.time() + self.RETRY_S
+                    while self._running and time.time() < deadline:
+                        time.sleep(0.2)
+                    continue
+            try:
+                self._poll()
+            except Exception:
+                self._teardown()
+                self.status = "SteamVR lost, retrying"
+                self._log("Skeleton: lost SteamVR connection")
+                continue
+            if (self._bisect and not self._poll_actions
+                    and time.time() - self._ready_at >= self.HOLD_S):
+                self._poll_actions = True
+                self._log("Skeleton BISECT: stage 5/5 full action polling "
+                          "(updateActionState + skeletal reads)")
+            time.sleep(1.0 / 30.0)
+
+    def _poll(self):
+        # A quit event means SteamVR is going down — raise into the retry path
+        # so the session is torn down promptly instead of erroring out call by
+        # call while SteamVR waits on us to exit.
+        ev = openvr.VREvent_t()
+        while self._system.pollNextEvent(ev):
+            if ev.eventType == openvr.VREvent_Quit:
+                self._system.acknowledgeQuit_Exiting()
+                raise RuntimeError("SteamVR quit")
+            name = self._event_names.get(ev.eventType)
+            if name:
+                self._log(f"Skeleton: event {name} (device {ev.trackedDeviceIndex})")
+            if ev.eventType in (openvr.VREvent_TrackedDeviceActivated,
+                                openvr.VREvent_TrackedDeviceRoleChanged):
+                self._log_controller_types()
+                # Devices returning from standby may accept a different bone
+                # count, and any earlier read failure is stale news — reset so
+                # recovery is attempted and new failures get logged again.
+                self._bone_count = [0, 0]
+                self._err_logged = [False, False]
+
+        # HMD activity explains most "why is nothing tracking" confusion —
+        # Steam Link only streams hand skeletons while the headset is worn.
+        try:
+            lvl = self._system.getTrackedDeviceActivityLevel(
+                openvr.k_unTrackedDeviceIndex_Hmd)
+        except Exception:
+            lvl = None
+        if lvl != self._hmd_activity:
+            self._hmd_activity = lvl
+            self._log("Skeleton: HMD "
+                      + self._activity_names.get(lvl, f"activity {lvl}"))
+
+        if not self._poll_actions:
+            return  # bisect stage 4: passive only
+
+        active = (openvr.VRActiveActionSet_t * 1)()
+        active[0].ulActionSet = self._action_set
+        self._vrin.updateActionState(active)
+
+        for hand, action in enumerate(self._actions):
+            hn = "L" if hand == 0 else "R"
+            joints = None
+            try:
+                data = self._vrin.getSkeletalActionData(action)
+                if bool(data.bActive) != self._hand_active[hand]:
+                    # Don't log the initial unknown→False transition: hands
+                    # simply not being tracked yet at startup is the normal
+                    # case, not an event.
+                    if data.bActive or self._hand_active[hand] is not None:
+                        self._log(f"Skeleton: {hn} hand "
+                                  + ("tracking" if data.bActive else "lost"))
+                    self._hand_active[hand] = bool(data.bActive)
+                if data.bActive:
+                    self._ever_active = True
+                    self._err_logged[hand] = False  # re-arm error reporting
+                    bones = self._get_bones(action, hand)
+                    if bones is not None:
+                        joints = tuple(
+                            (t.position.v[0], t.position.v[1], t.position.v[2])
+                            for t in bones)
+            except Exception as e:
+                if not self._err_logged[hand]:
+                    self._err_logged[hand] = True
+                    self._log(f"Skeleton: {hn} read error: {e!r}")
+            self.hands[hand] = joints
+
+        # "connected" alone is misleading when the actions never go active —
+        # surface the most likely cause right in the panel placeholder. Hands
+        # leaving camera view is the everyday case; a hand that has never once
+        # tracked long after connect suggests a binding problem instead.
+        if any(self._hand_active):
+            self.status = "connected"
+        elif self._ever_active:
+            self.status = "hands not in view"
+        elif time.time() - self._connected_at > 30.0:
+            self.status = "no skeleton yet — see console"
+
+        # While nothing is tracking, narrate the state so the console answers
+        # "why" instead of leaving a frozen status — including when tracking
+        # worked earlier and then got stuck after a standby/wake cycle. Fast
+        # cadence for the first minute of an inactive stretch, then slow, so
+        # an idle bridge doesn't flood the console overnight.
+        now = time.time()
+        if any(self._hand_active):
+            self._inactive_since = None
+        else:
+            if self._inactive_since is None:
+                self._inactive_since = now
+            cadence = 5.0 if now - self._inactive_since < 60.0 else 60.0
+            if now - self._last_diag >= cadence:
+                self._last_diag = now
+                self._diag()
+
+    def _diag(self):
+        for hand, action in enumerate(self._actions):
+            hn = "L" if hand == 0 else "R"
+            role = (openvr.TrackedControllerRole_LeftHand if hand == 0
+                    else openvr.TrackedControllerRole_RightHand)
+            parts = []
+            try:
+                idx = self._system.getTrackedDeviceIndexForControllerRole(role)
+                if idx == openvr.k_unTrackedDeviceIndexInvalid:
+                    parts.append("no device holds this hand role")
+                else:
+                    conn = self._system.isTrackedDeviceConnected(idx)
+                    parts.append(f"device #{idx}"
+                                 + ("" if conn else " (disconnected)"))
+            except Exception as e:
+                parts.append(f"role query failed: {e!r}")
+            try:
+                data = self._vrin.getSkeletalActionData(action)
+                parts.append("action ACTIVE" if data.bActive else "action inactive")
+            except Exception as e:
+                parts.append(f"skeletal data error: {e!r}")
+            # pyopenvr's getActionOrigins wrapper is broken (2.12 ends with
+            # `originsOut.value` on a ctypes array) — call the C function
+            # table directly instead.
+            try:
+                count = getattr(openvr, "k_unMaxActionOriginCount", 16)
+                origins = (openvr.VRInputValueHandle_t * count)()
+                # Pass the array itself: ctypes converts it to the pointer the
+                # prototype wants. byref(origins[0]) is a TypeError, because
+                # indexing a simple-type ctypes array yields a plain int —
+                # the exact bug inside pyopenvr's own wrapper.
+                err = self._vrin.function_table.getActionOrigins(
+                    self._action_set, action, origins, count)
+                if err == 0:
+                    parts.append(f"{sum(1 for o in origins if o)} binding origin(s)")
+                else:
+                    parts.append(f"origins error {err}")
+            except Exception as e:
+                parts.append(f"origins query failed: {type(e).__name__}")
+            try:
+                parts.append(
+                    f"tracking level {int(self._vrin.getSkeletalTrackingLevel(action))}")
+            except Exception:
+                pass
+            self._log(f"Skeleton: {hn} diag — " + ", ".join(parts))
+
+    def _get_bones(self, action, hand):
+        """Fetch bone transforms, discovering the count the runtime accepts.
+
+        getBoneCount cannot be trusted: with Steam Link hand tracking it
+        reports the standard 31-bone skeleton while GetSkeletalBoneData
+        demands the count the driver actually submits (rejecting everything
+        else as InvalidBoneCount). So probe — reported count first, then the
+        two known skeleton sizes, then the rest — and cache what works.
+        """
+        n = self._bone_count[hand]
+        if n < 0:
+            return None  # probing already failed for this hand; stay quiet
+        if n > 0:
+            try:
+                return self._fetch_bones(action, n)
+            except Exception as e:
+                if type(e).__name__ != "InputError_InvalidBoneCount":
+                    raise
+                self._bone_count[hand] = 0  # skeleton changed; re-probe
+
+        hn = "L" if hand == 0 else "R"
+        try:
+            reported = self._vrin.getBoneCount(action)
+        except Exception:
+            reported = 0
+        candidates = []
+        for c in [reported, 26, 31] + list(range(1, 65)):
+            if c > 0 and c not in candidates:
+                candidates.append(c)
+        for c in candidates:
+            try:
+                bones = self._fetch_bones(action, c)
+            except Exception as e:
+                if type(e).__name__ == "InputError_InvalidBoneCount":
+                    continue
+                raise
+            self._bone_count[hand] = c
+            extra = f" (runtime claims {reported})" if reported != c else ""
+            self._log(f"Skeleton: {hn} using {c} bones{extra}")
+            return bones
+        self._bone_count[hand] = -1
+        self._log(f"Skeleton: {hn} rejected every bone count 1-64 "
+                  f"(runtime claims {reported})")
+        return None
+
+    def _fetch_bones(self, action, n):
+        # Must pass a caller-allocated ctypes array: pyopenvr's wrapper
+        # quietly substitutes a 1-element array for any non-array argument
+        # and calls the C API with count=1, which the runtime rejects as
+        # InvalidBoneCount no matter what count we intended.
+        arr = (openvr.VRBoneTransform_t * n)()
+        self._vrin.getSkeletalBoneData(
+            action, openvr.VRSkeletalTransformSpace_Model,
+            openvr.VRSkeletalMotionRange_WithoutController, arr)
+        return arr
+
+
 # ── Gamepad Mode (ViGEm Xbox 360) ────────────────────────────────────────
 
 class GamepadMode:
@@ -1259,8 +1834,8 @@ class CyberFingerApp:
         self.root = tk.Tk()
         self.root.title("CyberFinger Bridge")
         self.root.configure(bg=COLOR_BG)
-        self.root.geometry("680x620")
-        self.root.minsize(600, 540)
+        self.root.geometry("680x790")
+        self.root.minsize(600, 660)
 
         # Set window icon (color version)
         try:
@@ -1288,8 +1863,17 @@ class CyberFingerApp:
         self.vrchat_gamepad_mode = None  # created lazily on first use
         self.active_mode = None
         self.slimevr = None              # created lazily while forwarding is on
+        # Config gate ("skeleton_enabled": false in settings.json) exists so
+        # the OpenVR client can be ruled in/out when debugging SteamVR-side
+        # trouble without touching code.
+        self.skeleton = (create_skeleton_source(
+                             self.log, self._config.get("skeleton_bisect", False))
+                         if self._config.get("skeleton_enabled", True) else None)
 
         self._build_ui()
+
+        if self.skeleton:
+            self.skeleton.start()
 
         # System tray icon
         self._tray_icon = None
@@ -1406,6 +1990,8 @@ class CyberFingerApp:
         if self.active_mode:
             self.active_mode.stop()
         self._stop_slimevr()
+        if self.skeleton:
+            self.skeleton.stop()
 
         if self._tray_icon:
             try:
@@ -1452,6 +2038,11 @@ class CyberFingerApp:
                         font=("Consolas", 11, "bold"), padding=(20, 8))
         style.map("Stop.TButton",
                   background=[("active", "#ff4444"), ("disabled", COLOR_BG3)])
+        style.configure("Console.TButton", background=COLOR_BG3, foreground=COLOR_FG,
+                        font=("Consolas", 9), padding=(10, 2))
+        style.map("Console.TButton",
+                  background=[("active", COLOR_BG2)],
+                  foreground=[("active", COLOR_ACCENT)])
 
         # ── Header ──
         header = ttk.Frame(self.root)
@@ -1523,12 +2114,27 @@ class CyberFingerApp:
         self.left_panel = HandPanel(hands_frame, "LEFT", side=tk.LEFT)
         self.right_panel = HandPanel(hands_frame, "RIGHT", side=tk.RIGHT)
 
-        # ── Log console ──
-        log_frame = ttk.Frame(self.root)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 12))
+        # ── Bottom bar: console toggle ──
+        # Packed before the skeleton row so pack gives it its slice at the
+        # bottom and the skeleton area expands into whatever is left.
+        bottom = ttk.Frame(self.root)
+        bottom.pack(side=tk.BOTTOM, fill=tk.X, padx=16, pady=(0, 8))
+        self.console_visible = self._config.get("console_visible", False)
+        self.console_btn = ttk.Button(
+            bottom, text="▼ Console" if self.console_visible else "▲ Console",
+            style="Console.TButton", command=self._toggle_console)
+        self.console_btn.pack(side=tk.RIGHT)
 
+        # ── Hand skeleton row (what the VR runtime is tracking) ──
+        self.skeleton_area = ttk.Frame(self.root)
+        self.skeleton_area.pack(fill=tk.BOTH, expand=True, padx=16, pady=(4, 4))
+        self.left_skeleton = SkeletonPanel(self.skeleton_area, "LEFT", side=tk.LEFT)
+        self.right_skeleton = SkeletonPanel(self.skeleton_area, "RIGHT", side=tk.RIGHT)
+
+        # ── Log console — hidden by default, slides up over the skeletons ──
+        self.log_frame = ttk.Frame(self.root)
         self.log_text = scrolledtext.ScrolledText(
-            log_frame, height=8,
+            self.log_frame, height=8,
             bg=COLOR_BG2, fg=COLOR_FG, insertbackground=COLOR_FG,
             font=("Consolas", 9), relief=tk.FLAT, borderwidth=0,
             selectbackground=COLOR_ACCENT, selectforeground="white",
@@ -1539,6 +2145,43 @@ class CyberFingerApp:
         self.log_text.tag_configure("accent", foreground=COLOR_ACCENT)
         self.log_text.tag_configure("green", foreground=COLOR_GREEN)
         self.log_text.tag_configure("red", foreground=COLOR_RED)
+
+        self._console_frac = 1.0 if self.console_visible else 0.0
+        self._console_anim = None
+        if self.console_visible:
+            self._place_console(1.0)
+
+    def _place_console(self, frac):
+        """Overlay the console over the bottom `frac` of the skeleton area."""
+        self.log_frame.place(in_=self.skeleton_area, relx=0.0, rely=1.0,
+                             anchor="sw", relwidth=1.0,
+                             relheight=max(0.02, frac))
+
+    def _toggle_console(self):
+        self.console_visible = not self.console_visible
+        self._config["console_visible"] = self.console_visible
+        self._save_config()
+        self.console_btn.configure(
+            text="▼ Console" if self.console_visible else "▲ Console")
+        if self._console_anim is not None:
+            self.root.after_cancel(self._console_anim)
+        self._animate_console()
+
+    def _animate_console(self):
+        self._console_anim = None
+        target = 1.0 if self.console_visible else 0.0
+        delta = target - self._console_frac
+        if abs(delta) < 0.02:
+            self._console_frac = target
+            if target > 0.0:
+                self._place_console(1.0)
+                self.log_text.see(tk.END)
+            else:
+                self.log_frame.place_forget()
+            return
+        self._console_frac += max(-0.2, min(0.2, delta))
+        self._place_console(self._console_frac)
+        self._console_anim = self.root.after(16, self._animate_console)
 
     def _on_autostart_changed(self):
         self._config["autostart"] = self.autostart_var.get()
@@ -1695,6 +2338,18 @@ class CyberFingerApp:
             self.left_panel.update_state(self.ble.left)
             self.right_panel.update_state(self.ble.right)
 
+        # Skip the skeleton redraw while the console fully covers it.
+        if self._console_frac < 1.0:
+            if self.skeleton:
+                self.left_skeleton.draw(self.skeleton.hands[0], self.skeleton.status)
+                self.right_skeleton.draw(self.skeleton.hands[1], self.skeleton.status)
+            else:
+                why = ("disabled in settings"
+                       if not self._config.get("skeleton_enabled", True)
+                       else "pip install openvr")
+                self.left_skeleton.draw(None, why)
+                self.right_skeleton.draw(None, why)
+
         self.root.after(33, self._poll_queues)  # ~30fps
 
     def run(self):
@@ -1708,6 +2363,8 @@ class CyberFingerApp:
             self.log("System tray: not available (install pystray pillow)")
         if not HAS_PYNPUT:
             self.log("Keyboard (F12 screenshot): not available (install pynput)")
+        if not HAS_OPENVR:
+            self.log("Hand skeleton: not available (pip install openvr)")
         self.root.mainloop()
 
 
@@ -1961,6 +2618,94 @@ class HandPanel:
         if w > 10:
             c.create_text(w // 2, h // 2, text=f"{self.label}\n(disconnected)",
                          fill=COLOR_FG_DIM, font=("Consolas", 10), justify=tk.CENTER)
+
+
+class SkeletonPanel:
+    """Canvas rendering of the runtime-tracked hand skeleton for one hand."""
+
+    def __init__(self, parent, label, side):
+        self.label = label
+        self.frame = ttk.Frame(parent)
+        self.frame.pack(side=side, fill=tk.BOTH, expand=True,
+                        padx=(0, 4) if side == tk.LEFT else (4, 0))
+        self.canvas = tk.Canvas(self.frame, bg=COLOR_BG2, highlightthickness=0,
+                                height=150)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        # Projection axes, chosen from the first tracked frame and then kept
+        # fixed — re-deriving per frame makes the view twitch between axes
+        # whenever the hand tilts past 45°.
+        self._axes = None
+
+    def _pick_axes(self, joints):
+        """Choose the two model-space axes to project onto: the widest-spread
+        axis is drawn vertically (finger direction), the runner-up across.
+        Sign puts fingertips at the top of the canvas."""
+        pts = joints[1:26]  # skip root and aux bones
+        ext = []
+        for a in range(3):
+            vals = [p[a] for p in pts]
+            ext.append((max(vals) - min(vals), a))
+        ext.sort(reverse=True)
+        v_axis, h_axis = ext[0][1], ext[1][1]
+        tips = [joints[t][v_axis] for t in SKELETON_TIPS]
+        v_sign = -1.0 if (sum(tips) / len(tips)) >= joints[1][v_axis] else 1.0
+        self._axes = (h_axis, v_axis, v_sign)
+
+    def draw(self, joints, status):
+        c = self.canvas
+        c.delete("all")
+        w = c.winfo_width()
+        h = c.winfo_height()
+        if w < 10 or h < 10:
+            return
+
+        if not joints or len(joints) < 26:
+            self._axes = None
+            c.create_text(w // 2, h // 2,
+                          text=f"{self.label} skeleton\n({status})",
+                          fill=COLOR_FG_DIM, font=("Consolas", 9),
+                          justify=tk.CENTER)
+            return
+
+        c.create_text(w // 2, 12, text=f"{self.label} SKELETON",
+                      fill=COLOR_BLUE, font=("Consolas", 8, "bold"))
+
+        if self._axes is None:
+            self._pick_axes(joints)
+        h_axis, v_axis, v_sign = self._axes
+
+        pts = joints[1:26]
+        hs = [p[h_axis] for p in pts]
+        vs = [p[v_axis] * v_sign for p in pts]
+        cx_m = (max(hs) + min(hs)) / 2.0
+        cy_m = (max(vs) + min(vs)) / 2.0
+        span_h = max(max(hs) - min(hs), 0.05)
+        span_v = max(max(vs) - min(vs), 0.05)
+        scale = min((w - 24) / span_h, (h - 32) / span_v)
+
+        def to_px(j):
+            p = joints[j]
+            return (w / 2 + (p[h_axis] - cx_m) * scale,
+                    h / 2 + 4 + (p[v_axis] * v_sign - cy_m) * scale)
+
+        for chain in SKELETON_CHAINS:
+            px = [to_px(j) for j in chain]
+            for (x0, y0), (x1, y1) in zip(px, px[1:]):
+                c.create_line(x0, y0, x1, y1, fill=COLOR_FG_DIM, width=2)
+
+        for chain in SKELETON_CHAINS:
+            for j in chain[1:]:
+                x, y = to_px(j)
+                if j in SKELETON_TIPS:
+                    c.create_oval(x - 3, y - 3, x + 3, y + 3,
+                                  fill=COLOR_ACCENT, outline="")
+                else:
+                    c.create_oval(x - 2, y - 2, x + 2, y + 2,
+                                  fill=COLOR_BLUE, outline="")
+
+        wx, wy = to_px(1)
+        c.create_rectangle(wx - 3, wy - 3, wx + 3, wy + 3,
+                           fill=COLOR_GREEN, outline="")
 
 
 # ── Entry point ──────────────────────────────────────────────────────────
