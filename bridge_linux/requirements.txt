@@ -10,6 +10,10 @@ pillow
 # Virtual gamepad (Linux uinput)
 evdev
 
+pynput
+pygobject
+python-osc
+
 # tkinter is usually pre-installed; if not:
 #   Ubuntu/Debian: sudo apt install python3-tk
 #   Fedora:        sudo dnf install python3-tkinter

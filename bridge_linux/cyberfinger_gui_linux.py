@@ -11,6 +11,8 @@ Combines VR (BLE→UDP) and Gamepad (BLE→uinput Xbox 360) bridge modes.
 Prerequisites:
     pip install bleak pystray pillow
     pip install evdev          # for gamepad mode
+    pip install pynput         # optional, F12 screenshot in VRChat mode
+    pip install python-osc     # optional, VRChat OSC (UseLeft, Grab, Voice)
     sudo modprobe uinput       # load uinput kernel module
 
     # To use uinput without root:
@@ -23,7 +25,6 @@ Prerequisites:
 
 Usage:
     python cyberfinger_gui_linux.py
-    python cyberfinger_gui_linux.py --debug
 """
 
 import asyncio
@@ -37,12 +38,32 @@ import sys
 import os
 import queue
 import json
+import subprocess
 
 try:
     from bleak import BleakScanner, BleakClient
+    from bleak.backends.bluezdbus.manager import get_global_bluez_manager
     HAS_BLEAK = True
 except ImportError:
     HAS_BLEAK = False
+
+try:
+    # gi (PyGObject) enables pystray's GTK/AppIndicator backend which supports
+    # menus on Linux. If not in the venv, try the system site-packages.
+    import gi
+except ImportError:
+    try:
+        import subprocess, sys as _sys
+        _gi_path = subprocess.run(
+            ["python3", "-c",
+             "import gi, os; print(os.path.dirname(os.path.dirname(gi.__file__)))"],
+            capture_output=True, text=True
+        ).stdout.strip()
+        if _gi_path and _gi_path not in _sys.path:
+            _sys.path.insert(0, _gi_path)
+        import gi  # noqa: F811
+    except Exception:
+        pass
 
 try:
     import pystray
@@ -58,6 +79,13 @@ try:
 except ImportError:
     HAS_EVDEV = False
 
+try:
+    from pynput.keyboard import Key, Controller as KeyboardController
+    _keyboard = KeyboardController()
+    HAS_PYNPUT = True
+except ImportError:
+    HAS_PYNPUT = False
+
 # ── BLE protocol (matches ESP32 firmware) ────────────────────────────────
 
 VR_SERVICE_UUID = "0000cf00-0000-1000-8000-00805f9b34fb"
@@ -69,18 +97,24 @@ GAMEPAD_PACK_FMT = "<IBBhhBB"
 INPUT_REPORT_FMT = "<BBhhBBI"
 INPUT_REPORT_SIZE = struct.calcsize(INPUT_REPORT_FMT)
 
-BTN_TRIGGER = 0x01
-BTN_GRIP    = 0x02
-BTN_B       = 0x04
-BTN_JCLICK  = 0x08
-BTN_A       = 0x10
+BTN_TRIGGER = 0x01  # bit0
+BTN_GRIP    = 0x02  # bit1
+BTN_C       = 0x04  # bit2
+BTN_D       = 0x08  # bit3
+BTN_E       = 0x10  # bit4
+BTN_MENU    = 0x20  # bit5
+BTN_JCLICK  = 0x40  # bit6
+BTN_STSEL   = 0x80  # bit7
 
 BUTTON_NAMES = {
     BTN_TRIGGER: "TRIG",
     BTN_GRIP:    "GRIP",
-    BTN_B:       "B",
+    BTN_C:       "C",
+    BTN_D:       "D",
+    BTN_E:       "E",
+    BTN_MENU:    "MENU",
     BTN_JCLICK:  "JCLK",
-    BTN_A:       "A",
+    BTN_STSEL:   "ST/SE",
 }
 
 # Brand colors
@@ -110,24 +144,33 @@ def resource_path(relative):
 
 # ── Tray icon helpers ────────────────────────────────────────────────────
 
-def _load_tray_icon_running():
+def _load_tray_icon(filename, bg_color):
+    """Load a black-silhouette PNG and composite it as white over bg_color."""
+    path = resource_path(os.path.join("assets", filename))
     try:
-        return Image.open(resource_path(os.path.join("assets", "icon_32x32.png")))
-    except Exception:
-        return _generate_fallback_icon((230, 0, 126))
+        raw = Image.open(path).convert("RGBA").resize((32, 32), Image.LANCZOS)
+        # The PNGs are black silhouettes on transparent — make them
+        # white-on-brand-color so they're visible on any tray background.
+        bg = Image.new("RGB", (32, 32), bg_color)
+        white = Image.new("RGB", (32, 32), (255, 255, 255))
+        alpha = raw.split()[3]          # use icon's alpha as mask
+        bg.paste(white, mask=alpha)
+        return bg
+    except Exception as e:
+        print(f"[tray] Failed to load {path}: {e}", flush=True)
+        return _generate_fallback_icon(bg_color)
+
+
+def _load_tray_icon_running():
+    return _load_tray_icon("icon_32x32.png", (230, 0, 126))
 
 
 def _load_tray_icon_idle():
-    try:
-        return Image.open(resource_path(os.path.join("assets", "icon_32x32_bw.png")))
-    except Exception:
-        return _generate_fallback_icon((128, 128, 128))
+    return _load_tray_icon("icon_32x32_bw.png", (80, 80, 80))
 
 
 def _generate_fallback_icon(color):
-    img = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.ellipse([2, 2, 30, 30], fill=color, outline=(255, 255, 255, 200), width=1)
+    img = Image.new("RGB", (32, 32), color)
     return img
 
 
@@ -173,39 +216,82 @@ class BLEManager:
         self._thread = None
         self._loop = None
         self._running = False
-        self._clients = []  # (label, BleakClient)
+        self._clients = []  # (label, BleakClient, char_uuid)
 
     def start(self):
         self._running = True
+        self._task = None
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
 
     def stop(self):
         self._running = False
-        if self._loop and self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._loop and self._loop.is_running() and self._task:
+            self._loop.call_soon_threadsafe(self._task.cancel)
 
     def _run_loop(self):
         loop = asyncio.new_event_loop()
         self._loop = loop
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self._main())
+            loop.run_until_complete(self._run())
         except Exception as e:
             self.app.log(f"BLE thread error: {e}")
         finally:
-            # Disconnect clients
-            try:
-                for label, client in self._clients:
-                    if client.is_connected:
-                        loop.run_until_complete(client.disconnect())
-            except Exception:
-                pass
             try:
                 loop.close()
             except Exception:
                 pass
             self._loop = None
+            self._task = None
+
+    async def _run(self):
+        self._task = asyncio.current_task()
+        try:
+            await self._main()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            for label, client, char_uuid in self._clients:
+                try:
+                    if client.is_connected:
+                        await client.stop_notify(char_uuid)
+                except Exception:
+                    pass
+                # Do NOT disconnect — the device stays connected as HID.
+                # Disconnecting would tear down the physical BLE link and force
+                # a slow re-pair/reconnect on the next start.
+            self._clients = []
+            self.left.connected = False
+            self.right.connected = False
+
+    def _get_paired_cyberfinger_devices(self):
+        """Return list of objects with .address/.name for paired CyberFinger devices."""
+        try:
+            result = subprocess.run(
+                ["bluetoothctl", "devices", "Paired"],
+                capture_output=True, text=True, timeout=5
+            )
+            lines = result.stdout.splitlines()
+        except Exception as e:
+            self.app.log(f"bluetoothctl failed: {e}")
+            return []
+
+        class _Dev:
+            def __init__(self, address, name):
+                self.address = address
+                self.name = name
+
+        devices = []
+        for line in lines:
+            # Format: "Device XX:XX:XX:XX:XX:XX DeviceName"
+            parts = line.strip().split(" ", 2)
+            if len(parts) == 3 and parts[0] == "Device":
+                address, name = parts[1], parts[2]
+                self.app.log(f"  Paired: \"{name}\" ({address})")
+                if "cyberfinger" in name.lower():
+                    devices.append(_Dev(address, name))
+        return devices
 
     async def _main(self):
         if not HAS_BLEAK:
@@ -213,34 +299,20 @@ class BLEManager:
             self.app.set_status("bleak not installed")
             return
 
-        self.app.log("Scanning for CyberFinger devices (5s)...")
-        self.app.set_status("Scanning...")
+        self.app.log("Looking up paired CyberFinger devices...")
+        self.app.set_status("Looking up paired devices...")
 
-        # Scan for BLE devices
-        try:
-            devices = await BleakScanner.discover(timeout=5.0)
-        except Exception as e:
-            self.app.log(f"Scan failed: {e}")
-            self.app.set_status("Scan failed")
-            return
-
-        # Filter CyberFinger devices
-        cf_devices = []
-        for dev in devices:
-            name = dev.name or ""
-            if "cyberfinger" in name.lower():
-                cf_devices.append(dev)
-                self.app.log(f"  Found: \"{name}\" ({dev.address})")
+        cf_devices = self._get_paired_cyberfinger_devices()
 
         if not cf_devices:
-            self.app.log("No CyberFinger devices found!")
-            self.app.log("Make sure ESP32s are powered on and advertising.")
-            self.app.set_status("No devices found")
+            self.app.log("No paired CyberFinger devices found!")
+            self.app.log("Pair the ESP32s via bluetoothctl first.")
+            self.app.set_status("No paired devices found")
             return
 
         self.app.log(f"Found {len(cf_devices)} CyberFinger device(s)")
 
-        # Assign left/right by name
+
         left_dev = right_dev = None
         for dev in cf_devices:
             name = (dev.name or "").lower()
@@ -256,20 +328,18 @@ class BLEManager:
             self.app.set_status("Assignment failed")
             return
 
-        # Connect and subscribe
         self._clients = []
-        tasks = []
-        if left_dev:
-            tasks.append(self._connect_device("LEFT", left_dev, self.left))
-        if right_dev:
-            tasks.append(self._connect_device("RIGHT", right_dev, self.right))
+        for label, dev, state in [("LEFT", left_dev, self.left), ("RIGHT", right_dev, self.right)]:
+            if dev is None:
+                continue
+            try:
+                await self._connect_device(label, dev, state)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self.app.log(f"Connection error: {e}")
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in results:
-            if isinstance(r, Exception):
-                self.app.log(f"Connection error: {r}")
-
-        active = [label for label, _ in self._clients]
+        active = [label for label, *_ in self._clients]
         if not active:
             self.app.log("Failed to connect to any device!")
             self.app.set_status("Connection failed")
@@ -278,11 +348,9 @@ class BLEManager:
         self.app.log(f"Connected: {', '.join(active)}")
         self.app.set_status("Connected")
 
-        # Keep running until stopped
         try:
             while self._running:
-                # Check connections are still alive
-                for label, client in self._clients:
+                for label, client, _ in self._clients:
                     if not client.is_connected:
                         self.app.log(f"{label}: Disconnected!")
                         self.app.set_status(f"{label} disconnected")
@@ -291,15 +359,31 @@ class BLEManager:
             pass
 
     async def _connect_device(self, label, dev, state):
-        """Connect to a CyberFinger device and subscribe to CF01 notifications."""
         self.app.log(f"{label}: Connecting to {dev.address}...")
 
+        # bleak 3.x always does an active scan in connect() if _device_path is
+        # not set, which fails for already-connected paired devices that aren't
+        # advertising.  Look up the real D-Bus path from the manager instead.
+        manager = await get_global_bluez_manager()
+        addr_key = dev.address.upper().replace(":", "_")
+        device_path = next(
+            (k for k in manager._properties if k.endswith(f"/dev_{addr_key}")),
+            None
+        )
+        if not device_path:
+            self.app.log(f"{label}: Device not found in BlueZ manager")
+            return
+        self.app.log(f"{label}: D-Bus path: {device_path}")
+
         client = BleakClient(dev.address, timeout=15.0)
+        client._backend._device_path = device_path
         try:
             await client.connect()
         except Exception as e:
-            self.app.log(f"{label}: Connection failed: {e}")
-            return
+            # AlreadyConnected is fine — device is still up as HID, just reuse it
+            if "AlreadyConnected" not in str(e):
+                self.app.log(f"{label}: Connection failed: {e}")
+                return
 
         if not client.is_connected:
             self.app.log(f"{label}: Not connected")
@@ -309,7 +393,6 @@ class BLEManager:
         state.name = dev.name or dev.address
         state.address = dev.address
 
-        # Find CF01 characteristic
         cf01_char = None
         for service in client.services:
             if "cf00" in str(service.uuid).lower():
@@ -323,7 +406,6 @@ class BLEManager:
             self.app.log(f"{label}: Services: {[str(s.uuid) for s in client.services]}")
             return
 
-        # Subscribe to notifications
         hand_idx = 0 if label == "LEFT" else 1
 
         def on_notify(sender, data):
@@ -332,7 +414,7 @@ class BLEManager:
         try:
             await client.start_notify(cf01_char.uuid, on_notify)
             self.app.log(f"{label}: Notifications active")
-            self._clients.append((label, client))
+            self._clients.append((label, client, cf01_char.uuid))
         except Exception as e:
             self.app.log(f"{label}: Notify subscribe failed: {e}")
 
@@ -343,8 +425,6 @@ class BLEManager:
         hand, buttons, joy_x, joy_y, trigger, battery, seq = \
             struct.unpack(INPUT_REPORT_FMT, data[:INPUT_REPORT_SIZE])
 
-        # Use the hand_override (from L/R assignment) not the packet's hand byte,
-        # in case firmware reports wrong hand index
         h = hand_override
 
         old_buttons = state.buttons
@@ -384,57 +464,54 @@ class VRMode:
         self.sock.close()
 
 
-# ── Gamepad Mode (evdev/uinput virtual Xbox 360) ─────────────────────────
+# ── uinput device factory ────────────────────────────────────────────────
+
+def _make_uinput():
+    """Create a UInput Xbox 360-like virtual gamepad. Returns (device, available)."""
+    if not HAS_EVDEV:
+        return None, False
+    try:
+        cap = {
+            ecodes.EV_ABS: [
+                (ecodes.ABS_X,     AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
+                (ecodes.ABS_Y,     AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
+                (ecodes.ABS_RX,    AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
+                (ecodes.ABS_RY,    AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
+                (ecodes.ABS_Z,     AbsInfo(value=0, min=0, max=255, fuzz=0, flat=0, resolution=0)),
+                (ecodes.ABS_RZ,    AbsInfo(value=0, min=0, max=255, fuzz=0, flat=0, resolution=0)),
+                (ecodes.ABS_HAT0X, AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),
+                (ecodes.ABS_HAT0Y, AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),
+            ],
+            ecodes.EV_KEY: [
+                ecodes.BTN_A,
+                ecodes.BTN_B,
+                ecodes.BTN_X,
+                ecodes.BTN_Y,
+                ecodes.BTN_TL,
+                ecodes.BTN_TR,
+                ecodes.BTN_SELECT,
+                ecodes.BTN_START,
+                ecodes.BTN_THUMBL,
+                ecodes.BTN_THUMBR,
+                ecodes.BTN_MODE,
+            ],
+        }
+        dev = UInput(cap, name="CyberFinger Virtual Gamepad",
+                     vendor=0x045e, product=0x028e, version=0x0110)
+        return dev, True
+    except PermissionError:
+        return None, False
+    except Exception:
+        return None, False
+
+
+# ── Gamepad Mode (evdev/uinput virtual Xbox 360, Resonite) ───────────────
 
 class GamepadMode:
     """Creates a virtual Xbox 360-like gamepad via Linux uinput."""
 
     def __init__(self):
-        self.device = None
-        self.available = False
-
-        if not HAS_EVDEV:
-            return
-
-        try:
-            # Define capabilities matching an Xbox 360 controller
-            cap = {
-                ecodes.EV_ABS: [
-                    # Left stick
-                    (ecodes.ABS_X,  AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
-                    (ecodes.ABS_Y,  AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
-                    # Right stick
-                    (ecodes.ABS_RX, AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
-                    (ecodes.ABS_RY, AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),
-                    # Triggers (not used in current mapping but reserved)
-                    (ecodes.ABS_Z,  AbsInfo(value=0, min=0, max=255, fuzz=0, flat=0, resolution=0)),
-                    (ecodes.ABS_RZ, AbsInfo(value=0, min=0, max=255, fuzz=0, flat=0, resolution=0)),
-                    # D-pad
-                    (ecodes.ABS_HAT0X, AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),
-                    (ecodes.ABS_HAT0Y, AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),
-                ],
-                ecodes.EV_KEY: [
-                    ecodes.BTN_A,           # btn 1 (south)
-                    ecodes.BTN_B,           # btn 2 (east)
-                    ecodes.BTN_X,           # btn 3 (west)
-                    ecodes.BTN_Y,           # btn 4 (north)
-                    ecodes.BTN_TL,          # btn 5 (LB)
-                    ecodes.BTN_TR,          # btn 6 (RB)
-                    ecodes.BTN_SELECT,      # btn 7 (back)
-                    ecodes.BTN_START,       # btn 8 (start)
-                    ecodes.BTN_THUMBL,      # btn 9 (L3)
-                    ecodes.BTN_THUMBR,      # btn 10 (R3)
-                    ecodes.BTN_MODE,        # guide button
-                ],
-            }
-
-            self.device = UInput(cap, name="CyberFinger Virtual Gamepad",
-                                vendor=0x045e, product=0x028e, version=0x0110)
-            self.available = True
-        except PermissionError:
-            pass  # Need uinput permissions
-        except Exception:
-            pass
+        self.device, self.available = _make_uinput()
 
     def on_input(self, hand, state):
         pass  # update_gamepad called by app
@@ -445,35 +522,228 @@ class GamepadMode:
 
         dev = self.device
 
-        # Sticks (Y inverted for standard gamepad convention)
         dev.write(ecodes.EV_ABS, ecodes.ABS_X,  left.joy_x)
-        dev.write(ecodes.EV_ABS, ecodes.ABS_Y,  -left.joy_y)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_Y,  left.joy_y)
         dev.write(ecodes.EV_ABS, ecodes.ABS_RX, right.joy_x)
-        dev.write(ecodes.EV_ABS, ecodes.ABS_RY, -right.joy_y)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_RY, right.joy_y)
 
-        # Right hand buttons
+        # Triggers (analog)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_Z,  int(left.trigger_float  * 255))
+        dev.write(ecodes.EV_ABS, ecodes.ABS_RZ, int(right.trigger_float * 255))
+
+        # Right hand buttons (mirrors Windows vgamepad mapping)
         dev.write(ecodes.EV_KEY, ecodes.BTN_A,      1 if (right.buttons & BTN_TRIGGER) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_B,      1 if (right.buttons & BTN_GRIP) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_TR,     1 if (right.buttons & BTN_B) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 1 if (right.buttons & BTN_JCLICK) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_START,  1 if (right.buttons & BTN_A) else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_B,      1 if (right.buttons & BTN_GRIP)    else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_TR,     1 if (right.buttons & BTN_MENU)    else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 1 if (right.buttons & BTN_JCLICK)  else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_START,  1 if (right.buttons & BTN_STSEL)   else 0)
 
         # Left hand buttons
         dev.write(ecodes.EV_KEY, ecodes.BTN_X,      1 if (left.buttons & BTN_TRIGGER) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_Y,      1 if (left.buttons & BTN_GRIP) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_TL,     1 if (left.buttons & BTN_B) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_THUMBL, 1 if (left.buttons & BTN_JCLICK) else 0)
-        dev.write(ecodes.EV_KEY, ecodes.BTN_SELECT, 1 if (left.buttons & BTN_A) else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_Y,      1 if (left.buttons & BTN_GRIP)    else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_TL,     1 if (left.buttons & BTN_MENU)    else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_THUMBL, 1 if (left.buttons & BTN_JCLICK)  else 0)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_SELECT, 1 if (left.buttons & BTN_STSEL)   else 0)
+
+        # C/D/E → D-pad + guide (mirrors Windows wButtons bit mapping)
+        # Right C→UP, Right D→DOWN, Right E→LEFT, Left C→RIGHT, Left D→GUIDE
+        hat_x = 0
+        hat_y = 0
+        if right.buttons & BTN_C: hat_y = -1   # up
+        if right.buttons & BTN_D: hat_y =  1   # down
+        if right.buttons & BTN_E: hat_x = -1   # left
+        if left.buttons  & BTN_C: hat_x =  1   # right
+        dev.write(ecodes.EV_ABS, ecodes.ABS_HAT0X, hat_x)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_HAT0Y, hat_y)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_MODE, 1 if (left.buttons & BTN_D) else 0)
 
         dev.syn()
 
     def stop(self):
+        self.available = False      # prevent racing BLE callbacks from touching closed fd
         if self.device:
             try:
                 self.device.close()
             except Exception:
                 pass
             self.device = None
+
+
+# ── Gamepad Mode VRChat (evdev/uinput + OSC) ─────────────────────────────
+
+class GamepadModeVRChat:
+    """
+    uinput Xbox 360 gamepad with VRChat-optimal button mapping + OSC.
+
+    VRChat gamepad layout (Xbox reference):
+      Left  stick        → Move
+      Right stick X      → Smooth turn
+      Right stick Y      → Look up/down
+      RT (right trigger) → Use / Interact (right hand)
+      A                  → Jump
+      R3                 → Action Menu right
+      Start              → Quick Menu
+
+    CyberFinger → Xbox mapping:
+      Right TRIGGER  → RT  (use/interact right)
+      Left  TRIGGER  → OSC UseLeft (no LT gamepad — avoids duplicate events)
+      Right GRIP     → OSC GrabRight (tap=toggle, hold≥200ms=release on lift)
+      Left  GRIP     → OSC GrabLeft
+      Right MENU     → R3  (Action Menu right)
+      Left  MENU     → Start (Quick Menu)
+      Right JCLICK / Left JCLICK → A (Jump)
+      Right C        → F12 screenshot (rising edge, via pynput)
+      Left  C        → X (Mute)
+      Right D        → DPAD_RIGHT
+      Left  D        → DPAD_LEFT
+      Right E        → DPAD_UP
+      Left  E        → DPAD_DOWN
+      Right ST/SE    → OSC chatbox open (rising edge)
+      Left  ST/SE    → OSC Voice mute toggle
+    """
+
+    def __init__(self):
+        self.device, self.available = _make_uinput()
+
+        self._osc = None
+        try:
+            from pythonosc import udp_client
+            self._osc = udp_client.SimpleUDPClient("127.0.0.1", 9000)
+        except ImportError:
+            pass
+
+        self._prev_use_l             = False
+        self._prev_grab_r            = False
+        self._prev_grab_l            = False
+        self._grab_right_toggled     = False
+        self._grab_left_toggled      = False
+        self._grab_right_press_time  = 0.0
+        self._grab_left_press_time   = 0.0
+        self._prev_c_r               = False
+        self._prev_stsel_r           = False
+        self._prev_stsel_l           = False
+
+    def _osc_send(self, address, value):
+        if self._osc:
+            try:
+                self._osc.send_message(address, value)
+            except Exception:
+                pass
+
+    def on_input(self, hand, state):
+        pass  # update_gamepad called by app
+
+    def update_gamepad(self, left, right):
+        if not self.available or not self.device:
+            return
+
+        dev = self.device
+
+        dev.write(ecodes.EV_ABS, ecodes.ABS_X,  left.joy_x)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_Y,  left.joy_y)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_RX, right.joy_x)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_RY, right.joy_y)
+
+        # Right trigger → RT; left trigger → OSC UseLeft only (no LT gamepad)
+        trig_r = max(right.trigger_float, 1.0 if (right.buttons & BTN_TRIGGER) else 0.0)
+        trig_l = max(left.trigger_float,  1.0 if (left.buttons  & BTN_TRIGGER) else 0.0)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_RZ, int(trig_r * 255))
+        dev.write(ecodes.EV_ABS, ecodes.ABS_Z,  0)  # suppressed — UseLeft via OSC
+
+        # OSC: UseLeft
+        use_l = trig_l > 0.1
+        if use_l != self._prev_use_l:
+            self._osc_send("/input/UseLeft", int(use_l))
+            self._prev_use_l = use_l
+
+        # OSC: GrabRight / GrabLeft (tap=toggle, hold≥200ms=release on lift)
+        grab_r = bool(right.buttons & BTN_GRIP)
+        grab_l = bool(left.buttons  & BTN_GRIP)
+
+        if grab_r and not self._prev_grab_r:
+            self._grab_right_press_time = time.time()
+            self._osc_send("/input/GrabRight", 1)
+        elif not grab_r and self._prev_grab_r:
+            held_ms = (time.time() - self._grab_right_press_time) * 1000
+            if held_ms < 200:
+                self._grab_right_toggled = not self._grab_right_toggled
+                self._osc_send("/input/GrabRight", int(self._grab_right_toggled))
+            else:
+                self._grab_right_toggled = False
+                self._osc_send("/input/GrabRight", 0)
+
+        if grab_l and not self._prev_grab_l:
+            self._grab_left_press_time = time.time()
+            self._osc_send("/input/GrabLeft", 1)
+        elif not grab_l and self._prev_grab_l:
+            held_ms = (time.time() - self._grab_left_press_time) * 1000
+            if held_ms < 200:
+                self._grab_left_toggled = not self._grab_left_toggled
+                self._osc_send("/input/GrabLeft", int(self._grab_left_toggled))
+            else:
+                self._grab_left_toggled = False
+                self._osc_send("/input/GrabLeft", 0)
+
+        self._prev_grab_r = grab_r
+        self._prev_grab_l = grab_l
+
+        # Jump (either jclick → A)
+        jclick = bool(right.buttons & BTN_JCLICK) or bool(left.buttons & BTN_JCLICK)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_A, 1 if jclick else 0)
+
+        # Action Menu R (right MENU → R3)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 1 if (right.buttons & BTN_MENU) else 0)
+
+        # Quick Menu (left MENU → Start)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_START, 1 if (left.buttons & BTN_MENU) else 0)
+
+        # Mute (left C → X)
+        dev.write(ecodes.EV_KEY, ecodes.BTN_X, 1 if (left.buttons & BTN_C) else 0)
+
+        # D-pad
+        hat_x = 0
+        hat_y = 0
+        if right.buttons & BTN_D: hat_x =  1   # right
+        if left.buttons  & BTN_D: hat_x = -1   # left
+        if right.buttons & BTN_E: hat_y = -1   # up
+        if left.buttons  & BTN_E: hat_y =  1   # down
+        dev.write(ecodes.EV_ABS, ecodes.ABS_HAT0X, hat_x)
+        dev.write(ecodes.EV_ABS, ecodes.ABS_HAT0Y, hat_y)
+
+        dev.syn()
+
+        # Right C → F12 screenshot (rising edge)
+        c_r = bool(right.buttons & BTN_C)
+        if c_r and not self._prev_c_r and HAS_PYNPUT:
+            try:
+                _keyboard.press(Key.f12)
+                _keyboard.release(Key.f12)
+            except Exception:
+                pass
+        self._prev_c_r = c_r
+
+        # Right ST/SE → open VRChat chatbox (rising edge)
+        stsel_r = bool(right.buttons & BTN_STSEL)
+        if stsel_r and not self._prev_stsel_r:
+            self._osc_send("/chatbox/input", ["", False, False])
+        self._prev_stsel_r = stsel_r
+
+        # Left ST/SE → OSC Voice (1 on press, 0 on release)
+        stsel_l = bool(left.buttons & BTN_STSEL)
+        if stsel_l != self._prev_stsel_l:
+            self._osc_send("/input/Voice", int(stsel_l))
+        self._prev_stsel_l = stsel_l
+
+    def stop(self):
+        self.available = False      # prevent racing BLE callbacks from touching closed fd
+        if self.device:
+            try:
+                self.device.close()
+            except Exception:
+                pass
+            self.device = None
+        for addr in ("/input/UseLeft", "/input/GrabRight", "/input/GrabLeft", "/input/Voice"):
+            self._osc_send(addr, 0)
 
 
 # ── GUI Application ──────────────────────────────────────────────────────
@@ -483,10 +753,15 @@ class CyberFingerApp:
         self.root = tk.Tk()
         self.root.title("CyberFinger Bridge")
         self.root.configure(bg=COLOR_BG)
-        self.root.geometry("680x580")
-        self.root.minsize(600, 500)
+        self.root.geometry("680x620")
+        self.root.minsize(600, 540)
 
-        # Set window icon
+        menubar = tk.Menu(self.root, tearoff=0)
+        app_menu = tk.Menu(menubar, tearoff=0)
+        app_menu.add_command(label="Exit", command=self._quit_app)
+        menubar.add_cascade(label="CyberFinger", menu=app_menu)
+        self.root.config(menu=menubar)
+
         try:
             icon_path = resource_path(os.path.join("assets", "icon_32x32.png"))
             icon_img = tk.PhotoImage(file=icon_path)
@@ -500,7 +775,6 @@ class CyberFingerApp:
         self._current_status = "Idle"
         self._window_visible = True
 
-        # Config persistence
         config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
         self._config_dir = os.path.join(config_home, "cyberfinger-bridge")
         self._config_path = os.path.join(self._config_dir, "settings.json")
@@ -508,12 +782,12 @@ class CyberFingerApp:
 
         self.ble = BLEManager(self)
         self.vr_mode = VRMode()
-        self.gamepad_mode = GamepadMode()
+        self.gamepad_mode = None         # created lazily on start
+        self.vrchat_gamepad_mode = None  # created lazily on start
         self.active_mode = None
 
         self._build_ui()
 
-        # System tray
         self._tray_icon = None
         if HAS_TRAY:
             self._setup_tray()
@@ -522,7 +796,6 @@ class CyberFingerApp:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
-        # Auto-start
         if self._config.get("autostart", False):
             self.root.after(500, self._start_bridge)
 
@@ -559,7 +832,7 @@ class CyberFingerApp:
         self._tray_icon = pystray.Icon(
             "CyberFingerBridge",
             self._tray_icon_idle,
-            "CyberFinger Bridge — Idle",
+            "CyberFinger Bridge - Idle",
             menu
         )
 
@@ -576,7 +849,7 @@ class CyberFingerApp:
     def _update_tray_tooltip(self):
         if self._tray_icon:
             mode = self.mode_var.get().upper() if hasattr(self, 'mode_var') else ""
-            self._tray_icon.title = f"CyberFinger Bridge — {self._current_status}" + \
+            self._tray_icon.title = f"CyberFinger Bridge - {self._current_status}" + \
                                     (f" ({mode})" if self.active_mode else "")
 
     def _tray_toggle_window(self, icon=None, item=None):
@@ -671,10 +944,14 @@ class CyberFingerApp:
         ctrl_frame.pack(fill=tk.X, padx=16, pady=(4, 4))
 
         self.mode_var = tk.StringVar(value=self._config.get("mode", "vr"))
-        ttk.Radiobutton(ctrl_frame, text="VR Mode (BLE→SteamVR)",
-                        variable=self.mode_var, value="vr").pack(side=tk.LEFT, padx=(0, 16))
-        ttk.Radiobutton(ctrl_frame, text="Gamepad Mode (BLE→uinput Xbox 360)",
-                        variable=self.mode_var, value="gamepad").pack(side=tk.LEFT)
+        radio_frame = ttk.Frame(ctrl_frame)
+        radio_frame.pack(side=tk.LEFT)
+        ttk.Radiobutton(radio_frame, text="VR Mode (BLE→SteamVR)",
+                        variable=self.mode_var, value="vr").pack(anchor=tk.W)
+        ttk.Radiobutton(radio_frame, text="Gamepad Mode (BLE→uinput Xbox 360, Resonite)",
+                        variable=self.mode_var, value="gamepad").pack(anchor=tk.W)
+        ttk.Radiobutton(radio_frame, text="Gamepad Mode (BLE→uinput Xbox 360, VRChat)",
+                        variable=self.mode_var, value="gamepad_vrc").pack(anchor=tk.W)
 
         self.stop_btn = ttk.Button(ctrl_frame, text="Stop", style="Stop.TButton",
                                    command=self._stop_bridge, state=tk.DISABLED)
@@ -730,23 +1007,33 @@ class CyberFingerApp:
             return
 
         mode = self.mode_var.get()
-        if mode == "gamepad":
+        if mode in ("gamepad", "gamepad_vrc"):
             if not HAS_EVDEV:
                 self.log("ERROR: python-evdev not installed!")
                 self.log("Run: pip install evdev")
                 return
-            if not self.gamepad_mode.available:
+            gp = GamepadMode() if mode == "gamepad" else GamepadModeVRChat()
+            if not gp.available:
                 self.log("ERROR: Cannot create uinput device!")
                 self.log("Run: sudo modprobe uinput")
-                self.log("See --help for uinput permissions setup")
+                self.log("See file header for uinput permissions setup")
                 return
+            if mode == "gamepad":
+                self.gamepad_mode = gp
+                self.active_mode = self.gamepad_mode
+            else:
+                self.vrchat_gamepad_mode = gp
+                self.active_mode = self.vrchat_gamepad_mode
+        else:
+            self.active_mode = self.vr_mode
 
         self._config["mode"] = mode
         self._config["autostart"] = self.autostart_var.get()
         self._save_config()
 
-        self.active_mode = self.vr_mode if mode == "vr" else self.gamepad_mode
         self.log(f"Starting {mode.upper()} mode...")
+        if mode == "gamepad_vrc":
+            self.log(">>> VRChat: enable OSC via Action Menu → OSC → Enabled")
 
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
@@ -762,6 +1049,8 @@ class CyberFingerApp:
         if self.active_mode:
             self.active_mode.stop()
         self.active_mode = None
+        self.gamepad_mode = None
+        self.vrchat_gamepad_mode = None
 
         self.start_btn.configure(state=tk.NORMAL)
         self.stop_btn.configure(state=tk.DISABLED)
@@ -772,14 +1061,11 @@ class CyberFingerApp:
         self.log("Bridge stopped")
         self._set_tray_running(False)
 
-        # Recreate for next start
         self.ble = BLEManager(self)
-        if HAS_EVDEV:
-            self.gamepad_mode = GamepadMode()
 
     def on_input(self, hand, state):
         if self.active_mode:
-            if isinstance(self.active_mode, GamepadMode):
+            if isinstance(self.active_mode, (GamepadMode, GamepadModeVRChat)):
                 self.active_mode.update_gamepad(self.ble.left, self.ble.right)
             else:
                 self.active_mode.on_input(hand, state)
@@ -818,16 +1104,22 @@ class CyberFingerApp:
             self.left_panel.update_state(self.ble.left)
             self.right_panel.update_state(self.ble.right)
 
-        self.root.after(33, self._poll_queues)
+        self.root.after(33, self._poll_queues)  # ~30fps
 
     def run(self):
         self.log("CyberFinger Bridge (Linux) ready")
         self.log(f"BLE: {'bleak available' if HAS_BLEAK else 'NOT available (pip install bleak)'}")
-        self.log(f"Gamepad: {'evdev/uinput available' if self.gamepad_mode.available else 'NOT available'}")
+        if HAS_EVDEV:
+            if os.access('/dev/uinput', os.W_OK):
+                self.log("Gamepad: evdev/uinput available")
+            else:
+                self.log("Gamepad: uinput permission denied — see file header for setup")
+        else:
+            self.log("Gamepad: NOT available (pip install evdev)")
         if not HAS_TRAY:
             self.log("System tray: not available (pip install pystray pillow)")
-        if not self.gamepad_mode.available and HAS_EVDEV:
-            self.log("uinput: permission denied — see README for setup")
+        if not HAS_PYNPUT:
+            self.log("Keyboard (F12 screenshot): not available (pip install pynput)")
         self.root.mainloop()
 
 
@@ -839,7 +1131,7 @@ class HandPanel:
         self.frame = ttk.Frame(parent)
         self.frame.pack(side=side, fill=tk.BOTH, expand=True, padx=(0, 4) if side == tk.LEFT else (4, 0))
 
-        self.canvas = tk.Canvas(self.frame, bg=COLOR_BG2, highlightthickness=0, height=180)
+        self.canvas = tk.Canvas(self.frame, bg=COLOR_BG2, highlightthickness=0, height=210)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
     def update_state(self, state: HandState):
@@ -892,14 +1184,17 @@ class HandPanel:
 
         # Buttons
         btn_x = 3 * w // 4 if is_left else w // 4
-        btn_y_start = 50
-        btn_spacing = 24
+        btn_y_start = 30
+        btn_spacing = 17
         btn_names_bits = [
-            ("TRIG", BTN_TRIGGER),
-            ("GRIP", BTN_GRIP),
-            ("B", BTN_B),
-            ("A:ST/SE", BTN_A),
-            ("JCLK", BTN_JCLICK),
+            ("TRIG",  BTN_TRIGGER),
+            ("GRIP",  BTN_GRIP),
+            ("C",     BTN_C),
+            ("D",     BTN_D),
+            ("E",     BTN_E),
+            ("MENU",  BTN_MENU),
+            ("JCLK",  BTN_JCLICK),
+            ("ST/SE", BTN_STSEL),
         ]
 
         for i, (name, bit) in enumerate(btn_names_bits):
@@ -907,14 +1202,14 @@ class HandPanel:
             pressed = bool(state.buttons & bit)
             fill = COLOR_ACCENT if pressed else COLOR_BG
             outline = COLOR_ACCENT if pressed else COLOR_BG3
-            c.create_oval(btn_x - 8, by - 8, btn_x + 8, by + 8,
+            c.create_oval(btn_x - 7, by - 7, btn_x + 7, by + 7,
                          fill=fill, outline=outline, width=2)
-            c.create_text(btn_x + 18, by, text=name, fill=COLOR_FG if pressed else COLOR_FG_DIM,
-                         font=("monospace", 9), anchor=tk.W)
+            c.create_text(btn_x + 14, by, text=name, fill=COLOR_FG if pressed else COLOR_FG_DIM,
+                         font=("monospace", 8), anchor=tk.W)
 
         # Trigger bar
         trig_x = w // 2
-        trig_y = 160
+        trig_y = 168
         trig_w = w - 40
         trig_h = 10
         trig_val = state.trigger_float
