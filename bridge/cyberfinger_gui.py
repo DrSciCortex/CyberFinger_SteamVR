@@ -22,6 +22,7 @@ import os
 import base64
 import queue
 import json
+import math
 
 try:
     import pystray
@@ -46,6 +47,33 @@ GAMEPAD_MAGIC    = 0x50474643
 GAMEPAD_PACK_FMT = "<IBBhhBB"
 INPUT_REPORT_FMT = "<BBhhBBI"
 INPUT_REPORT_SIZE = struct.calcsize(INPUT_REPORT_FMT)
+
+# The GATT report grew twice, and each revision is a strict prefix of the next
+# (see CyberFingerFW_ESP32/src/vr_gatt.h — the first 28 bytes are frozen), so
+# the widest layout the payload can support is the correct one to apply:
+#
+#   12 bytes — base report, no IMU at all
+#   28 bytes — one appended quaternion (primary body IMU)
+#   61 bytes — presence bitmask + two further quaternions
+#
+INPUT_REPORT_IMU_FMT = "<BBhhBBI4f"
+INPUT_REPORT_IMU_SIZE = struct.calcsize(INPUT_REPORT_IMU_FMT)
+
+INPUT_REPORT_MULTI_FMT = "<BBhhBBI4fB4f4f"
+INPUT_REPORT_MULTI_SIZE = struct.calcsize(INPUT_REPORT_MULTI_FMT)
+
+# VrImuBit — which quaternion slots carry real data
+IMU_BODY_PRIMARY   = 0x01
+IMU_BODY_SECONDARY = 0x02
+IMU_JOINT          = 0x04
+
+IMU_SLOT_LABELS = (
+    (IMU_BODY_PRIMARY,   "BODY 1"),
+    (IMU_BODY_SECONDARY, "BODY 2"),
+    (IMU_JOINT,          "JOINT"),
+)
+
+IDENTITY_QUAT = (1.0, 0.0, 0.0, 0.0)
 
 BTN_TRIGGER = 0x01  # bit0 — AX  (trigger)
 BTN_GRIP    = 0x02  # bit1 — BY  (grip)
@@ -142,6 +170,13 @@ class HandState:
         self.timestamp = 0.0
         self.connected = False
         self.name = ""
+        # Orientation — absent slots stay identity. imu_present is 0 on older
+        # firmware and on units with no working IMU, which is what drives the
+        # "no IMU installed" placeholder in the panel.
+        self.imu_present = 0
+        self.quat = IDENTITY_QUAT        # primary body IMU
+        self.quat_body2 = IDENTITY_QUAT  # secondary body IMU
+        self.quat_joint = IDENTITY_QUAT  # joint IMU
 
     @property
     def joy_x_float(self):
@@ -156,6 +191,27 @@ class HandState:
         if self.trigger > 10:
             return self.trigger / 255.0
         return 1.0 if (self.buttons & BTN_TRIGGER) else 0.0
+
+    def reset_link(self):
+        """Clear per-connection capability flags before (re)attaching a glove."""
+        self.imu_present = 0
+        self.quat = IDENTITY_QUAT
+        self.quat_body2 = IDENTITY_QUAT
+        self.quat_joint = IDENTITY_QUAT
+
+    @property
+    def has_imu(self):
+        return self.imu_present != 0
+
+    def active_imus(self):
+        """[(label, quat)] for slots this unit actually populates, in wire order."""
+        quats = {
+            IMU_BODY_PRIMARY:   self.quat,
+            IMU_BODY_SECONDARY: self.quat_body2,
+            IMU_JOINT:          self.quat_joint,
+        }
+        return [(label, quats[bit]) for bit, label in IMU_SLOT_LABELS
+                if self.imu_present & bit]
 
 
 # ── BLE discovery + subscription (runs in asyncio thread) ────────────────
@@ -245,6 +301,7 @@ class BLEManager:
             self._ble_devices.append(ble_dev)
             self.left.name = name
             self.left.connected = True
+            self.left.reset_link()
             result = await self._setup_device("LEFT", ble_dev)
             if result:
                 mode, char, token = result
@@ -258,6 +315,7 @@ class BLEManager:
             self._ble_devices.append(ble_dev)
             self.right.name = name
             self.right.connected = True
+            self.right.reset_link()
             result = await self._setup_device("RIGHT", ble_dev)
             if result:
                 mode, char, token = result
@@ -287,11 +345,44 @@ class BLEManager:
         if len(data) < INPUT_REPORT_SIZE:
             return
 
-        hand, buttons, joy_x, joy_y, trigger, battery, seq = \
-            struct.unpack(INPUT_REPORT_FMT, data[:INPUT_REPORT_SIZE])
+        # Each revision is a strict prefix of the next, so decode with the
+        # widest layout this payload can satisfy and leave the rest at defaults.
+        present = 0
+        quats = (IDENTITY_QUAT, IDENTITY_QUAT, IDENTITY_QUAT)
+
+        if len(data) >= INPUT_REPORT_MULTI_SIZE:
+            (hand, buttons, joy_x, joy_y, trigger, battery, seq,
+             q1w, q1x, q1y, q1z,
+             present,
+             q2w, q2x, q2y, q2z,
+             q3w, q3x, q3y, q3z) = struct.unpack(
+                INPUT_REPORT_MULTI_FMT, data[:INPUT_REPORT_MULTI_SIZE])
+            quats = ((q1w, q1x, q1y, q1z),
+                     (q2w, q2x, q2y, q2z),
+                     (q3w, q3x, q3y, q3z))
+
+        elif len(data) >= INPUT_REPORT_IMU_SIZE:
+            hand, buttons, joy_x, joy_y, trigger, battery, seq, qw, qx, qy, qz = \
+                struct.unpack(INPUT_REPORT_IMU_FMT, data[:INPUT_REPORT_IMU_SIZE])
+            # This revision has no presence bitmask. An all-zero quaternion is
+            # the only signal that the IMU failed to come up.
+            if any(abs(v) > 1e-6 for v in (qw, qx, qy, qz)):
+                present = IMU_BODY_PRIMARY
+                quats = ((qw, qx, qy, qz), IDENTITY_QUAT, IDENTITY_QUAT)
+
+        else:
+            hand, buttons, joy_x, joy_y, trigger, battery, seq = \
+                struct.unpack(INPUT_REPORT_FMT, data[:INPUT_REPORT_SIZE])
 
         h = min(hand, 1)
         state = self.left if h == 0 else self.right
+
+        if present != state.imu_present:
+            hn = "L" if h == 0 else "R"
+            names = [label for bit, label in IMU_SLOT_LABELS if present & bit]
+            self.app.log(f"{hn} IMU: {', '.join(names) if names else 'none detected'}")
+        state.imu_present = present
+        state.quat, state.quat_body2, state.quat_joint = quats
 
         old_buttons = state.buttons
         state.buttons = buttons
@@ -1161,6 +1252,72 @@ class CyberFingerApp:
         self.root.mainloop()
 
 
+# ── Minimal 3D helpers (orthographic, no external deps) ──────────────────
+
+# Fixed camera angles — a three-quarter view so all three axes stay distinct.
+_VIEW_YAW   = math.radians(35.0)
+_VIEW_PITCH = math.radians(20.0)
+
+
+def quat_to_matrix(q):
+    """Unit quaternion (w, x, y, z) → 3x3 rotation matrix as row tuples."""
+    w, x, y, z = q
+    n = math.sqrt(w * w + x * x + y * y + z * z)
+    if n < 1e-9:
+        return ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    w, x, y, z = w / n, x / n, y / n, z / n
+    return (
+        (1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - w * z),       2.0 * (x * z + w * y)),
+        (2.0 * (x * y + w * z),       1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - w * x)),
+        (2.0 * (x * z - w * y),       2.0 * (y * z + w * x),       1.0 - 2.0 * (x * x + y * y)),
+    )
+
+
+def quat_to_euler_deg(q):
+    """Unit quaternion (w, x, y, z) → (roll, pitch, yaw) in degrees."""
+    w, x, y, z = q
+
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+
+    # Clamp guards against gimbal-lock inputs drifting just past ±1.
+    sinp = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
+    pitch = math.asin(sinp)
+
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+
+    return (math.degrees(roll), math.degrees(pitch), math.degrees(yaw))
+
+
+def rotate_vec(m, v):
+    """Apply a 3x3 row-major matrix to a 3-vector."""
+    return (
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+    )
+
+
+def project(v, cx, cy, scale):
+    """World point → (screen_x, screen_y, depth). Larger depth is nearer."""
+    x, y, z = v
+
+    # Yaw about world Y, then pitch about the camera's X.
+    cyaw, syaw = math.cos(_VIEW_YAW), math.sin(_VIEW_YAW)
+    xe = x * cyaw - z * syaw
+    ze = x * syaw + z * cyaw
+
+    cp, sp = math.cos(_VIEW_PITCH), math.sin(_VIEW_PITCH)
+    ye = y * cp - ze * sp
+    depth = y * sp + ze * cp
+
+    # Screen y is inverted so +Y points up on the canvas.
+    return (cx + xe * scale, cy - ye * scale, depth)
+
+
 # ── Hand visualization panel ─────────────────────────────────────────────
 
 class HandPanel:
@@ -1171,7 +1328,7 @@ class HandPanel:
         self.frame = ttk.Frame(parent)
         self.frame.pack(side=side, fill=tk.BOTH, expand=True, padx=(0, 4) if side == tk.LEFT else (4, 0))
 
-        self.canvas = tk.Canvas(self.frame, bg=COLOR_BG2, highlightthickness=0, height=210)
+        self.canvas = tk.Canvas(self.frame, bg=COLOR_BG2, highlightthickness=0, height=350)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         self._last_state = None
@@ -1269,6 +1426,73 @@ class HandPanel:
                               fill=COLOR_ACCENT, outline="")
         c.create_text(trig_x, trig_y - 6, text=f"Trigger: {int(trig_val * 100)}%",
                      fill=COLOR_FG_DIM, font=("Consolas", 8))
+
+        # ── IMU orientation ──
+        self._draw_imu(c, w, h, state)
+
+    def _draw_imu(self, c, w, h, state):
+        """Draw a 3D triad per populated IMU slot, or a placeholder if there are none."""
+        c.create_line(20, 192, w - 20, 192, fill=COLOR_BG3, width=1)
+
+        imus = state.active_imus()
+        if not imus:
+            c.create_text(w // 2, 258, text="no IMU installed",
+                         fill=COLOR_FG_DIM, font=("Consolas", 9))
+            return
+
+        # Share the panel width between however many slots are live, shrinking
+        # the triads rather than letting them collide.
+        col_w = w / len(imus)
+        scale = max(18.0, min(46.0, col_w * 0.30))
+        cy = 262
+
+        for i, (label, quat) in enumerate(imus):
+            cx = col_w * (i + 0.5)
+            c.create_text(cx, 206, text=label, fill=COLOR_FG_DIM,
+                         font=("Consolas", 8, "bold"))
+            self._draw_triad(c, cx, cy, scale, quat)
+
+            roll, pitch, yaw = quat_to_euler_deg(quat)
+            if len(imus) == 1:
+                readout = f"R{roll:+6.1f}  P{pitch:+6.1f}  Y{yaw:+6.1f}"
+            else:
+                readout = f"{roll:+.0f} {pitch:+.0f} {yaw:+.0f}"
+            c.create_text(cx, 322, text=readout,
+                         fill=COLOR_FG_DIM, font=("Consolas", 8))
+
+    def _draw_triad(self, c, cx, cy, scale, quat):
+        """Render one orientation as an XYZ axis triad against a horizon ring."""
+        m = quat_to_matrix(quat)
+
+        # Reference ground ring so rotation reads against a fixed horizon.
+        ring = []
+        for i in range(32):
+            a = 2.0 * math.pi * i / 32
+            px, py, _ = project((math.cos(a), 0.0, math.sin(a)), cx, cy, scale)
+            ring.extend((px, py))
+        c.create_polygon(ring, outline=COLOR_BG3, fill="", width=1)
+
+        axes = [
+            ((1.0, 0.0, 0.0), COLOR_RED,   "X"),
+            ((0.0, 1.0, 0.0), COLOR_GREEN, "Y"),
+            ((0.0, 0.0, 1.0), COLOR_BLUE,  "Z"),
+        ]
+
+        # Paint far-to-near so nearer arms overlap correctly.
+        drawn = []
+        for vec, color, name in axes:
+            px, py, depth = project(rotate_vec(m, vec), cx, cy, scale)
+            drawn.append((depth, px, py, color, name))
+        drawn.sort(key=lambda t: t[0])
+
+        ox, oy, _ = project((0.0, 0.0, 0.0), cx, cy, scale)
+        for depth, px, py, color, name in drawn:
+            # Nearer arms draw thicker — a cheap depth cue without shading.
+            width = 3 if depth >= 0 else 2
+            c.create_line(ox, oy, px, py, fill=color, width=width)
+            c.create_oval(px - 3, py - 3, px + 3, py + 3, fill=color, outline="")
+            c.create_text(px + 9, py - 7, text=name, fill=color,
+                         font=("Consolas", 8, "bold"))
 
     def set_disconnected(self):
         c = self.canvas
