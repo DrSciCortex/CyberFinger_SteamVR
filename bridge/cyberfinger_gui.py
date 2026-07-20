@@ -205,6 +205,18 @@ def linear_accel_ms2(quat, accel_raw):
             accel_raw[2] * scale - gz * GRAVITY_MS2)
 
 
+def _blend(c1, c2, t):
+    """Blend two #rrggbb colors; t=0 → c1, t=1 → c2."""
+    t = max(0.0, min(1.0, t))
+    a, b = int(c1[1:], 16), int(c2[1:], 16)
+    parts = []
+    for shift in (16, 8, 0):
+        va = (a >> shift) & 255
+        vb = (b >> shift) & 255
+        parts.append(int(va + (vb - va) * t))
+    return "#%02x%02x%02x" % tuple(parts)
+
+
 def fmt_buttons(btn):
     parts = [name for bit, name in BUTTON_NAMES.items() if btn & bit]
     return "+".join(parts) if parts else "none"
@@ -1016,6 +1028,7 @@ _SKELETON_EVENTS = (
     "VREvent_Input_BindingLoadFailed",
     "VREvent_Input_BindingLoadSuccessful",
     "VREvent_Input_ActionManifestReloaded",
+    "VREvent_SceneApplicationChanged",
 )
 
 _HMD_ACTIVITY_LEVELS = {
@@ -1143,6 +1156,10 @@ class OpenVRSkeletonSource:
         self._bisect = bisect
         self._poll_actions = True
         self._ready_at = 0.0
+        # Per hand: (rot_3x3_rows, head_local_pos_xyz, distance_m) or None.
+        # World pose of the hand device relative to the HMD, for the 6DOF
+        # display. Swapped atomically like .hands.
+        self.pose_info = [None, None]
         self.hands = [None, None]   # 0 = left, 1 = right
         self.status = "starting..."
         self._running = False
@@ -1150,6 +1167,8 @@ class OpenVRSkeletonSource:
         self._ready = False
         self._logged_waiting = False
         self._offline_cleaned = False
+        self._reset_requested = False
+        self._reset_count = 0
         self._vrin = None
         self._system = None
         self._actions = [None, None]
@@ -1200,16 +1219,46 @@ class OpenVRSkeletonSource:
         self._inactive_since = None
         self._ctype_logged = {}
         self._logged_waiting = False
+        self._reset_requested = False
         self._log("Skeleton: connected to SteamVR")
+        # Binding attachment completes on the device's first delivered input
+        # event (observed: a thumb-index pinch attaches instantly after
+        # standby). A haptic pulse is the one output we can push without
+        # bound actions; on some stacks it nudges that same path awake.
+        for role in (openvr.TrackedControllerRole_LeftHand,
+                     openvr.TrackedControllerRole_RightHand):
+            try:
+                idx = self._system.getTrackedDeviceIndexForControllerRole(role)
+                if idx != openvr.k_unTrackedDeviceIndexInvalid:
+                    self._system.triggerHapticPulse(idx, 0, 1000)
+            except Exception:
+                pass
         if self._bisect:
             self._log("Skeleton BISECT: stage 4/5 passive polling "
                       f"(events + HMD activity) — holding {int(self.HOLD_S)} s")
         self._log_controller_types()
 
     def _stage_connect(self):
+        # Probe as Background first: that type never auto-launches SteamVR,
+        # so the bridge stays passive while VR is down. Once the server is
+        # known to be up, reconnect as Overlay — overlay apps' action sets
+        # keep getting pumped even in the void (no scene app; this machine
+        # runs with SteamVR Home disabled), where a Background app's skeleton
+        # bindings may never attach origins.
         openvr.init(openvr.VRApplication_Background)
+        openvr.shutdown()
+        openvr.init(openvr.VRApplication_Overlay)
         self._system = openvr.VRSystem()
         self._vrin = openvr.VRInput()
+        # Hold a real (hidden) overlay handle, not just the app type: after
+        # the vrlink HMD cycles through standby in the void, vrserver stops
+        # attaching binding origins for clients without one.
+        try:
+            self._overlay = openvr.VROverlay().createOverlay(
+                "drscicortex.cyberfinger.bridge.anchor", "CyberFinger Bridge")
+        except Exception as e:
+            self._overlay = None
+            self._log(f"Skeleton: overlay anchor failed: {type(e).__name__}")
 
     def _stage_identity(self):
         # Identify as our own app key so SteamVR's binding UI lists us as
@@ -1291,6 +1340,7 @@ class OpenVRSkeletonSource:
     def _teardown(self):
         self._ready = False
         self.hands = [None, None]
+        self.pose_info = [None, None]
         self._vrin = None
         self._system = None
         try:
@@ -1329,6 +1379,15 @@ class OpenVRSkeletonSource:
                 self.status = "SteamVR lost, retrying"
                 self._log("Skeleton: lost SteamVR connection")
                 continue
+            if self._reset_requested:
+                # Bindings never attached (input context built while the HMD
+                # was asleep). A fresh client connect attaches immediately —
+                # the manual-reload observation, automated.
+                self._reset_requested = False
+                self._log("Skeleton: bindings never attached — reconnecting")
+                self._teardown()
+                self.status = "reconnecting..."
+                continue
             if (self._bisect and not self._poll_actions
                     and time.time() - self._ready_at >= self.HOLD_S):
                 self._poll_actions = True
@@ -1356,6 +1415,12 @@ class OpenVRSkeletonSource:
                 # recovery is attempted and new failures get logged again.
                 self._bone_count = [0, 0]
                 self._err_logged = [False, False]
+            # A scene app starting is the one event known to un-wedge
+            # vrserver's binding attachment, so it re-arms fast reconnects.
+            # Device churn does NOT — it's constant with camera hand tracking.
+            if ev.eventType == getattr(openvr,
+                                       "VREvent_SceneApplicationChanged", -1):
+                self._reset_count = 0
 
         # HMD activity explains most "why is nothing tracking" confusion —
         # Steam Link only streams hand skeletons while the headset is worn.
@@ -1368,6 +1433,28 @@ class OpenVRSkeletonSource:
             self._hmd_activity = lvl
             self._log("Skeleton: HMD "
                       + self._activity_names.get(lvl, f"activity {lvl}"))
+
+        # World poses for the 6DOF display. Device poses come from IVRSystem,
+        # not the skeletal actions, so this works even while the skeleton is
+        # still warming up.
+        try:
+            poses = (openvr.TrackedDevicePose_t
+                     * openvr.k_unMaxTrackedDeviceCount)()
+            self._system.getDeviceToAbsoluteTrackingPose(
+                openvr.TrackingUniverseStanding, 0.0, poses)
+            hmd = self._extract_pose(poses[openvr.k_unTrackedDeviceIndex_Hmd])
+            for hand, role in ((0, openvr.TrackedControllerRole_LeftHand),
+                               (1, openvr.TrackedControllerRole_RightHand)):
+                info = None
+                if hmd is not None:
+                    idx = self._system.getTrackedDeviceIndexForControllerRole(role)
+                    if idx != openvr.k_unTrackedDeviceIndexInvalid:
+                        dev = self._extract_pose(poses[idx])
+                        if dev is not None:
+                            info = self._relative_pose(hmd, dev)
+                self.pose_info[hand] = info
+        except Exception:
+            self.pose_info = [None, None]
 
         if not self._poll_actions:
             return  # bisect stage 4: passive only
@@ -1392,6 +1479,7 @@ class OpenVRSkeletonSource:
                 if data.bActive:
                     self._ever_active = True
                     self._err_logged[hand] = False  # re-arm error reporting
+                    self._reset_count = 0
                     bones = self._get_bones(action, hand)
                     if bones is not None:
                         joints = tuple(
@@ -1412,7 +1500,7 @@ class OpenVRSkeletonSource:
         elif self._ever_active:
             self.status = "hands not in view"
         elif time.time() - self._connected_at > 30.0:
-            self.status = "no skeleton yet — see console"
+            self.status = "no data — try a finger pinch"
 
         # While nothing is tracking, narrate the state so the console answers
         # "why" instead of leaving a frozen status — including when tracking
@@ -1428,9 +1516,33 @@ class OpenVRSkeletonSource:
             cadence = 5.0 if now - self._inactive_since < 60.0 else 60.0
             if now - self._last_diag >= cadence:
                 self._last_diag = now
-                self._diag()
+                roles_held, total_origins = self._diag()
+                # Stuck-state self-heal: devices hold hand roles and the HMD
+                # is worn, yet after a grace period no origins ever attached.
+                worn = getattr(openvr, "k_EDeviceActivityLevel_UserInteraction", 1)
+                # Two quick reconnect attempts, then slow periodic retries
+                # forever — the wedge clears on SteamVR's schedule (settling
+                # after boot, or a scene app starting), so give up never,
+                # just quietly.
+                grace = 20.0 if self._reset_count < 2 else 120.0
+                if (roles_held and total_origins == 0
+                        and self._hmd_activity == worn
+                        and now - self._connected_at > grace):
+                    if self._reset_count == 0:
+                        self._log("Skeleton: tip — a thumb-index pinch "
+                                  "usually completes attachment instantly")
+                    elif self._reset_count == 2:
+                        self._log(
+                            "Skeleton: bindings still not attaching — "
+                            "dropping to slow retries (every 2 min). "
+                            "A finger pinch or starting any VR app "
+                            "usually fixes it instantly")
+                    self._reset_count += 1
+                    self._reset_requested = True
 
     def _diag(self):
+        roles_held = 0
+        total_origins = 0
         for hand, action in enumerate(self._actions):
             hn = "L" if hand == 0 else "R"
             role = (openvr.TrackedControllerRole_LeftHand if hand == 0
@@ -1441,6 +1553,7 @@ class OpenVRSkeletonSource:
                 if idx == openvr.k_unTrackedDeviceIndexInvalid:
                     parts.append("no device holds this hand role")
                 else:
+                    roles_held += 1
                     conn = self._system.isTrackedDeviceConnected(idx)
                     parts.append(f"device #{idx}"
                                  + ("" if conn else " (disconnected)"))
@@ -1464,7 +1577,9 @@ class OpenVRSkeletonSource:
                 err = self._vrin.function_table.getActionOrigins(
                     self._action_set, action, origins, count)
                 if err == 0:
-                    parts.append(f"{sum(1 for o in origins if o)} binding origin(s)")
+                    n = sum(1 for o in origins if o)
+                    total_origins += n
+                    parts.append(f"{n} binding origin(s)")
                 else:
                     parts.append(f"origins error {err}")
             except Exception as e:
@@ -1475,6 +1590,7 @@ class OpenVRSkeletonSource:
             except Exception:
                 pass
             self._log(f"Skeleton: {hn} diag — " + ", ".join(parts))
+        return roles_held, total_origins
 
     def _get_bones(self, action, hand):
         """Fetch bone transforms, discovering the count the runtime accepts.
@@ -1520,6 +1636,37 @@ class OpenVRSkeletonSource:
         self._log(f"Skeleton: {hn} rejected every bone count 1-64 "
                   f"(runtime claims {reported})")
         return None
+
+    @staticmethod
+    def _extract_pose(pose):
+        """TrackedDevicePose_t → (position, rotation rows, velocity), or None."""
+        if not pose.bPoseIsValid:
+            return None
+        m = pose.mDeviceToAbsoluteTracking.m
+        rot = tuple(tuple(float(m[r][c]) for c in range(3)) for r in range(3))
+        pos = tuple(float(m[r][3]) for r in range(3))
+        vel = tuple(float(pose.vVelocity.v[i]) for i in range(3))
+        return pos, rot, vel
+
+    @staticmethod
+    def _relative_pose(hmd, dev):
+        """(hand world rotation, head-local position, distance, head-local
+        velocity relative to the head).
+
+        Head frame follows OpenVR device convention: +x right, +y up,
+        -z forward — what the dome inset projects.
+        """
+        (hpos, hrot, hvel), (dpos, drot, dvel) = hmd, dev
+        rel = tuple(dpos[i] - hpos[i] for i in range(3))
+        relv = tuple(dvel[i] - hvel[i] for i in range(3))
+        # Rows of hrot are the head axes in world space, so head-local is
+        # R^T · v.
+        local = tuple(sum(hrot[r][i] * rel[r] for r in range(3))
+                      for i in range(3))
+        local_v = tuple(sum(hrot[r][i] * relv[r] for r in range(3))
+                        for i in range(3))
+        dist = math.sqrt(sum(v * v for v in rel))
+        return drot, local, dist, local_v
 
     def _fetch_bones(self, action, n):
         # Must pass a caller-allocated ctypes array: pyopenvr's wrapper
@@ -2341,8 +2488,13 @@ class CyberFingerApp:
         # Skip the skeleton redraw while the console fully covers it.
         if self._console_frac < 1.0:
             if self.skeleton:
-                self.left_skeleton.draw(self.skeleton.hands[0], self.skeleton.status)
-                self.right_skeleton.draw(self.skeleton.hands[1], self.skeleton.status)
+                poses = self.skeleton.pose_info
+                self.left_skeleton.draw(self.skeleton.hands[0],
+                                        self.skeleton.status,
+                                        poses[0], poses[1])
+                self.right_skeleton.draw(self.skeleton.hands[1],
+                                         self.skeleton.status,
+                                         poses[1], poses[0])
             else:
                 why = ("disabled in settings"
                        if not self._config.get("skeleton_enabled", True)
@@ -2635,6 +2787,9 @@ class SkeletonPanel:
         # fixed — re-deriving per frame makes the view twitch between axes
         # whenever the hand tilts past 45°.
         self._axes = None
+        # Dome trail: recent (time, head-local unit direction) samples for
+        # this panel's own hand, redrawn with fading color each frame.
+        self._trail = []
 
     def _pick_axes(self, joints):
         """Choose the two model-space axes to project onto: the widest-spread
@@ -2651,7 +2806,8 @@ class SkeletonPanel:
         v_sign = -1.0 if (sum(tips) / len(tips)) >= joints[1][v_axis] else 1.0
         self._axes = (h_axis, v_axis, v_sign)
 
-    def draw(self, joints, status):
+    def draw(self, joints, status, pose=None, other_pose=None):
+        """pose/other_pose: (rot_3x3, head_local_pos, dist) from pose_info."""
         c = self.canvas
         c.delete("all")
         w = c.winfo_width()
@@ -2665,11 +2821,55 @@ class SkeletonPanel:
                           text=f"{self.label} skeleton\n({status})",
                           fill=COLOR_FG_DIM, font=("Consolas", 9),
                           justify=tk.CENTER)
-            return
+        else:
+            c.create_text(w // 2, 12, text=f"{self.label} SKELETON",
+                          fill=COLOR_BLUE, font=("Consolas", 8, "bold"))
+            if pose is not None:
+                self._draw_bones(c, w, h,
+                                 self._orient_to_px(joints, pose[0], w, h,
+                                                    dist=pose[2]))
+            else:
+                self._draw_bones(c, w, h, self._autofit_to_px(joints, w, h))
 
-        c.create_text(w // 2, 12, text=f"{self.label} SKELETON",
-                      fill=COLOR_BLUE, font=("Consolas", 8, "bold"))
+        if pose is not None:
+            self._draw_dome(c, w, h, pose, other_pose)
 
+    # ── skeleton projections ──
+
+    def _orient_to_px(self, joints, rot, w, h, dist=None):
+        """World-oriented view: wrist-relative joints rotated by the hand
+        device's world rotation, then through the same fixed three-quarter
+        camera the IMU triads use. Base scale is physical (no zooming as the
+        hand turns); on top of that, distance from the head scales the whole
+        render like the dome dot — closer hand draws bigger."""
+        scale = min(w - 24, h - 36) / 0.28  # px per metre, hand span ~0.25 m
+        if dist is not None:
+            scale *= max(0.6, min(1.5, 0.55 / max(dist, 0.2)))
+        wx, wy, wz = joints[1]
+        # Straight-on camera, unlike the IMU triads' three-quarter view: its
+        # 35° yaw reads as "the hand is rotated wrong", not as perspective.
+        # A touch of pitch keeps some depth without skewing the heading.
+        cy_, sy_ = 1.0, 0.0
+        cp_, sp_ = math.cos(_VIEW_PITCH), math.sin(_VIEW_PITCH)
+
+        def to_px(j):
+            lx, ly, lz = joints[j]
+            lx, ly, lz = lx - wx, ly - wy, lz - wz
+            x = rot[0][0] * lx + rot[0][1] * ly + rot[0][2] * lz
+            y = rot[1][0] * lx + rot[1][1] * ly + rot[1][2] * lz
+            z = rot[2][0] * lx + rot[2][1] * ly + rot[2][2] * lz
+            # 180° about vertical: without it the render is left/right
+            # mirrored relative to the user's own view of their hand.
+            x, z = -x, -z
+            x1 = x * cy_ + z * sy_
+            z1 = -x * sy_ + z * cy_
+            y1 = y * cp_ - z1 * sp_
+            return w / 2 + x1 * scale, h / 2 + 6 - y1 * scale
+
+        return to_px
+
+    def _autofit_to_px(self, joints, w, h):
+        """Fallback when no device pose is available: original auto-fit."""
         if self._axes is None:
             self._pick_axes(joints)
         h_axis, v_axis, v_sign = self._axes
@@ -2688,6 +2888,10 @@ class SkeletonPanel:
             return (w / 2 + (p[h_axis] - cx_m) * scale,
                     h / 2 + 4 + (p[v_axis] * v_sign - cy_m) * scale)
 
+        return to_px
+
+    @staticmethod
+    def _draw_bones(c, w, h, to_px):
         for chain in SKELETON_CHAINS:
             px = [to_px(j) for j in chain]
             for (x0, y0), (x1, y1) in zip(px, px[1:]):
@@ -2706,6 +2910,82 @@ class SkeletonPanel:
         wx, wy = to_px(1)
         c.create_rectangle(wx - 3, wy - 3, wx + 3, wy + 3,
                            fill=COLOR_GREEN, outline="")
+
+    # ── position inset: 180° dome as seen from the head ──
+
+    def _draw_dome(self, c, w, h, pose, other_pose):
+        """Azimuthal-equidistant projection of the front hemisphere: centre is
+        straight ahead of the gaze, rings at 30°/60°/90° off-forward, the rim
+        is beside/behind the head. Dot size encodes distance."""
+        r = max(24, min(44, h // 3))
+        margin = 8
+        cx = (margin + r) if self.label == "LEFT" else (w - margin - r)
+        cy = h - margin - r
+
+        for k in (1 / 3, 2 / 3, 1.0):
+            rr = r * k
+            c.create_oval(cx - rr, cy - rr, cx + rr, cy + rr,
+                          outline=COLOR_BG3, width=1)
+        for deg in range(0, 360, 45):
+            a = math.radians(deg)
+            c.create_line(cx + (r / 3) * math.cos(a), cy + (r / 3) * math.sin(a),
+                          cx + r * math.cos(a), cy + r * math.sin(a),
+                          fill=COLOR_BG3, width=1)
+        c.create_line(cx - 3, cy, cx + 3, cy, fill=COLOR_FG_DIM)
+        c.create_line(cx, cy - 3, cx, cy + 3, fill=COLOR_FG_DIM)
+
+        # Fading trail of the own hand's last second of motion.
+        now = time.time()
+        self._trail.append((now, pose[1]))
+        while self._trail and self._trail[0][0] < now - 1.0:
+            self._trail.pop(0)
+        pts = [self._dome_project(cx, cy, r, p)[:2] for _, p in self._trail]
+        for i in range(1, len(pts)):
+            age = (now - self._trail[i][0])  # 0 = fresh, 1 = oldest
+            c.create_line(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1],
+                          fill=_blend(COLOR_ACCENT, COLOR_BG2, age), width=1)
+
+        if other_pose is not None:
+            self._dome_dot(c, cx, cy, r, other_pose, COLOR_FG_DIM)
+        self._dome_dot(c, cx, cy, r, pose, COLOR_ACCENT)
+
+        c.create_text(cx, cy - r - 7, text=f"{pose[2]:.2f}m",
+                      fill=COLOR_FG_DIM, font=("Consolas", 7))
+
+    @staticmethod
+    def _dome_project(cx, cy, r, local):
+        """Head-local point → dome pixel position (+ whether behind 90°)."""
+        x, y, z = local
+        n = math.sqrt(x * x + y * y + z * z)
+        if n < 1e-6:
+            return cx, cy, False
+        ux, uy, uz = x / n, y / n, z / n
+        # Head frame: +x right, +y up, -z forward. Angle off forward-gaze:
+        theta = math.acos(max(-1.0, min(1.0, -uz)))
+        rr = min(theta / (math.pi / 2), 1.0) * r
+        phi = math.atan2(uy, ux)
+        return (cx + rr * math.cos(phi), cy - rr * math.sin(phi),
+                theta > math.pi / 2)
+
+    def _dome_dot(self, c, cx, cy, r, pose, color):
+        _, local, dist, vel = pose
+        px, py, behind = self._dome_project(cx, cy, r, local)
+
+        # Velocity whisker: where the hand will be in 0.15 s, projected the
+        # same way, so the whisker curves with the dome rather than lying.
+        speed = math.sqrt(sum(v * v for v in vel))
+        if speed > 0.05:
+            ahead = tuple(local[i] + vel[i] * 0.15 for i in range(3))
+            qx, qy, _ = self._dome_project(cx, cy, r, ahead)
+            c.create_line(px, py, qx, qy, fill=color, width=1)
+
+        size = max(2.5, 7.0 - dist * 6.0)  # closer → bigger
+        if behind:
+            c.create_oval(px - size, py - size, px + size, py + size,
+                          outline=color, width=1)
+        else:
+            c.create_oval(px - size, py - size, px + size, py + size,
+                          fill=color, outline="")
 
 
 # ── Entry point ──────────────────────────────────────────────────────────
