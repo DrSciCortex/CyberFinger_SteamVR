@@ -1,0 +1,14 @@
+# CyberFinger Fusion Studio — dependencies on top of bridge/requirements.txt
+#
+#   pip install -r requirements.txt -r requirements-fusion-studio.txt
+
+numpy
+matplotlib
+
+# MindRove EMG armband (real device over Wi-Fi; the built-in simulator source works without it)
+mindrove
+
+# Headset camera: OpenXR hand tracking (Quest via Meta/SteamVR OpenXR runtime)
+pyopenxr
+glfw
+PyOpenGL
