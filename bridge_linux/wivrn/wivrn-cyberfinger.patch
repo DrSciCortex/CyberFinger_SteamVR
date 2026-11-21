@@ -1,0 +1,278 @@
+--- a/dashboard/CMakeLists.txt
++++ b/dashboard/CMakeLists.txt
+@@ -65,6 +65,23 @@
+         qml/Github.svg
+ )
+ 
++# CyberFinger (https://github.com/SciCortex/CyberFinger_SteamVR): its driver's settings, in the settings page.
++# Built from a checkout of that repository, like the driver in the server.
++set(WIVRN_CYBERFINGER_DIR "" CACHE PATH "CyberFinger_SteamVR checkout to build the CyberFinger driver from (empty: without it)")
++if (NOT WIVRN_CYBERFINGER_DIR)
++    message(FATAL_ERROR "This dashboard has the CyberFinger settings: set WIVRN_CYBERFINGER_DIR to the CyberFinger_SteamVR checkout")
++endif()
++set(CYBERFINGER_DASHBOARD_DIR ${WIVRN_CYBERFINGER_DIR}/bridge_linux/wivrn/dashboard)
++set_source_files_properties(${CYBERFINGER_DASHBOARD_DIR}/CyberFingerSettings.qml PROPERTIES
++    QT_RESOURCE_ALIAS qml/CyberFingerSettings.qml
++)
++qt_target_qml_sources(wivrn-dashboard QML_FILES ${CYBERFINGER_DASHBOARD_DIR}/CyberFingerSettings.qml)
++target_sources(wivrn-dashboard PRIVATE
++    ${CYBERFINGER_DASHBOARD_DIR}/cyberfinger_config.cpp
++    ${CYBERFINGER_DASHBOARD_DIR}/cyberfinger_config.h
++)
++target_include_directories(wivrn-dashboard PRIVATE ${CYBERFINGER_DASHBOARD_DIR})
++
+ configure_file(gui_config.h.in gui_config.h)
+ configure_file(io.github.wivrn.wivrn.desktop.in io.github.wivrn.wivrn.desktop)
+ 
+--- a/dashboard/qml/SettingsPage.qml
++++ b/dashboard/qml/SettingsPage.qml
+@@ -22,6 +22,7 @@
+         anchors.fill: parent
+ 
+         Kirigami.FormLayout {
++            id: wivrn_form
+ 
+             Kirigami.InlineMessage {
+                 Layout.fillWidth: true
+@@ -290,6 +291,11 @@
+ 
+         }
+ 
++        CyberFingerSettings {
++            id: cyberfinger
++            twinFormLayouts: [wivrn_form]
++        }
++
+         Item {
+             // spacer item
+             Layout.fillHeight: true
+@@ -302,14 +308,19 @@
+         onAccepted: {
+             settings.save();
+             Settings.save(WivrnServer);
++            cyberfinger.save();
+ 
+             applicationWindow().pageStack.pop();
+         }
+         onReset: {
+             Settings.restore_defaults();
++            cyberfinger.restoreDefaults();
+             settings.load();
+         }
+-        onRejected: applicationWindow().pageStack.pop()
++        onRejected: {
++            cyberfinger.revert();
++            applicationWindow().pageStack.pop();
++        }
+     }
+ 
+     Component.onCompleted: {
+@@ -362,10 +373,12 @@
+         adb_location.text = DashboardSettings.adb_location;
+ 
+         show_system_checks.checked = DashboardSettings.show_system_checks;
++
++        cyberfinger.load();
+     }
+ 
+     Shortcut {
+         sequences: [StandardKey.Cancel]
+-        onActivated: {if (isCurrentPage) applicationWindow().pageStack.pop();}
++        onActivated: {if (isCurrentPage) {cyberfinger.revert(); applicationWindow().pageStack.pop();}}
+     }
+ }
+--- a/server/CMakeLists.txt
++++ b/server/CMakeLists.txt
+@@ -147,6 +147,25 @@
+ 	target_include_directories(wivrn-server SYSTEM PRIVATE ${monado_SOURCE_DIR}/src/xrt/compositor/)
+ 	target_include_directories(wivrn-server PRIVATE .)
+ 
++	# CyberFinger (https://github.com/SciCortex/CyberFinger_SteamVR): its buttons on the tracked hands.
++	# The code is built from a checkout of that repository.
++	set(WIVRN_CYBERFINGER_DIR "" CACHE PATH "CyberFinger_SteamVR checkout to build the CyberFinger driver from (empty: without it)")
++	if (WIVRN_CYBERFINGER_DIR)
++		target_sources(wivrn-server PRIVATE
++			${WIVRN_CYBERFINGER_DIR}/bridge_linux/wivrn/driver/CfConfig.cpp
++			${WIVRN_CYBERFINGER_DIR}/bridge_linux/wivrn/driver/CfDriver.cpp
++			${WIVRN_CYBERFINGER_DIR}/bridge_linux/wivrn/driver/CfHand.cpp
++			${WIVRN_CYBERFINGER_DIR}/bridge_linux/wivrn/driver/CfWivrn.cpp
++			${WIVRN_CYBERFINGER_DIR}/src/SkeletonSynth.cpp
++			${WIVRN_CYBERFINGER_DIR}/src/StudioLink.cpp
++			)
++		target_include_directories(wivrn-server PRIVATE
++			${WIVRN_CYBERFINGER_DIR}/bridge_linux/wivrn/driver
++			${WIVRN_CYBERFINGER_DIR}/src
++			)
++		target_compile_definitions(wivrn-server PRIVATE WIVRN_FEATURE_CYBERFINGER CF_NO_OPENVR)
++	endif()
++
+ 	target_link_libraries(wivrn-server PRIVATE CLI11::CLI11 xrt-external-renderdoc)
+ 
+ 	if (WIVRN_FEATURE_STEAMVR_LIGHTHOUSE)
+--- a/server/driver/wivrn_controller.cpp
++++ b/server/driver/wivrn_controller.cpp
+@@ -733,6 +733,10 @@
+ {
+ 	std::lock_guard _{mutex};
+ 	inputs_array = inputs_staging;
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	if (cyberfinger)
++		cyberfinger->UpdateInputs(inputs_array.data(), inputs_array.size());
++#endif
+ 	return XRT_SUCCESS;
+ }
+ 
+@@ -819,6 +823,10 @@
+ 			U_LOG_XDEV_UNSUPPORTED_INPUT(this, u_log_get_global_level(), name);
+ 			return XRT_ERROR_INPUT_UNSUPPORTED;
+ 	}
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	if (cyberfinger)
++		cyberfinger->AdjustPose(name, target_ns, *res, [&] { return std::get<1>(grip.get_pose_at(target_ns)); });
++#endif
+ 	cnx->add_tracking_request(device, at_timestamp_ns, production_timestamp, now);
+ 	return XRT_SUCCESS;
+ }
+@@ -832,6 +840,10 @@
+ 			*out_timestamp_ns = desired_timestamp_ns;
+ 			XrTime production_timestamp;
+ 			std::tie(production_timestamp, *out_value) = joints.get_at(desired_timestamp_ns);
++#ifdef WIVRN_FEATURE_CYBERFINGER
++			if (cyberfinger)
++				cyberfinger->AdjustJoints(desired_timestamp_ns, *out_value, [&] { return std::get<1>(grip.get_pose_at(desired_timestamp_ns)); });
++#endif
+ 			cnx->add_tracking_request(joints.hand_id == 0 ? device_id::LEFT_HAND : device_id::RIGHT_HAND, desired_timestamp_ns, production_timestamp);
+ 			return XRT_SUCCESS;
+ 		}
+@@ -860,6 +872,21 @@
+ 
+ void wivrn_controller::update_tracking(const from_headset::tracking & tracking, const clock_offset & offset)
+ {
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	if (cyberfinger)
++	{
++		// A hand again, not a controller: the headset tracks its aim, pinch and poke poses,
++		// which for a controller are derived from the grip
++		if (cyberfinger->TakeActivation())
++		{
++			for (auto list: {&aim, &pinch_ext, &poke_ext})
++				list->set_derived(list, XRT_POSE_IDENTITY);
++			if (cnx->get_info().palm_pose)
++				palm.set_derived(&palm, XRT_POSE_IDENTITY);
++		}
++		cyberfinger->OnTracking(tracking, offset);
++	}
++#endif
+ 	aim.update_tracking(tracking, offset);
+ 	grip.update_tracking(tracking, offset);
+ 	palm.update_tracking(tracking, offset);
+@@ -870,10 +897,18 @@
+ void wivrn_controller::update_hand_tracking(const from_headset::hand_tracking & tracking, const clock_offset & offset)
+ {
+ 	joints.update_tracking(tracking, offset);
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	if (cyberfinger)
++		cyberfinger->OnHandTracking(tracking, offset);
++#endif
+ }
+ 
+ xrt_result_t wivrn_controller::set_output(xrt_output_name name, const xrt_output_value * value)
+ {
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	if (cyberfinger and cyberfinger->Haptic(*value))
++		return XRT_SUCCESS;
++#endif
+ 	device_id id;
+ 	const bool left = device_type == XRT_DEVICE_TYPE_LEFT_HAND_CONTROLLER;
+ 	switch (name)
+--- a/server/driver/wivrn_controller.h
++++ b/server/driver/wivrn_controller.h
+@@ -25,6 +25,10 @@
+ #include "hand_joints_list.h"
+ #include "pose_list.h"
+ 
++#ifdef WIVRN_FEATURE_CYBERFINGER
++#include "CfWivrn.h"
++#endif
++
+ #include <mutex>
+ #include <vector>
+ 
+@@ -49,6 +53,10 @@
+ 
+ 	wivrn::wivrn_session * cnx;
+ 
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	cf::WivrnHand * cyberfinger = nullptr;
++#endif
++
+ public:
+ 	using base_t = xrt_device;
+ 	wivrn_controller(xrt_device_name name, int hand_id, xrt_device * hmd, wivrn::wivrn_session * cnx);
+@@ -67,6 +75,14 @@
+ 	void update_hand_tracking(const from_headset::hand_tracking &, const clock_offset &);
+ 
+ 	void reset_history();
++
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	// A CyberFinger worn on this hand: its inputs and haptics, the hand's poses with its IMU
++	void set_cyberfinger(cf::WivrnHand * hand)
++	{
++		cyberfinger = hand;
++	}
++#endif
+ };
+ 
+ } // namespace wivrn
+--- a/server/driver/wivrn_session.cpp
++++ b/server/driver/wivrn_session.cpp
+@@ -130,6 +130,11 @@
+ 	static_roles.hand_tracking.unobstructed.right = static_xdevs[right_controller_index] = &right_controller;
+ 	static_xdevs[right_hand_interaction_index = static_xdev_count++] = &right_hand_interaction;
+ 
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	left_controller.set_cyberfinger(&cyberfinger.GetHand(0));
++	right_controller.set_cyberfinger(&cyberfinger.GetHand(1));
++#endif
++
+ 	// Expose a gamepad forwarded from the headset as a native OpenXR device (/user/gamepad).
+ 	// Always present; inactive until the headset reports a connected gamepad.
+ 	roles.gamepad = static_xdev_count;
+@@ -587,6 +592,24 @@
+ 
+ 	auto left = (roles.left == -1 || roles.left == left_controller_index || roles.left == left_hand_interaction_index) ? get_name(tracking.interaction_profiles[0]) : XRT_DEVICE_INVALID;
+ 	auto right = (roles.right == -1 || roles.right == right_controller_index || roles.right == right_hand_interaction_index) ? get_name(tracking.interaction_profiles[1]) : XRT_DEVICE_INVALID;
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	// A worn CyberFinger keeps a bare hand on the controller device, as the controller it emulates:
++	// the hand's poses and joints with the CyberFinger's buttons
++	if (roles.left == -1 || roles.left == left_controller_index || roles.left == left_hand_interaction_index)
++		left = cyberfinger.Profile(0, left);
++	if (roles.right == -1 || roles.right == right_controller_index || roles.right == right_hand_interaction_index)
++		right = cyberfinger.Profile(1, right);
++	// The headset sends what applications ask for. With none asking for a hand the CyberFinger holds,
++	// ask here: the driver calibrates its IMU fusion on the hand, and its bridge shows it
++	for (int hand = 0; hand < 2; ++hand)
++	{
++		if (not cyberfinger.KeepTracking(hand))
++			continue;
++		const XrTime now = os_monotonic_get_ns();
++		add_tracking_request(hand ? device_id::RIGHT_GRIP : device_id::LEFT_GRIP, now + 20'000'000, 0, now);
++		add_tracking_request(hand ? device_id::RIGHT_HAND : device_id::LEFT_HAND, now + 20'000'000, 0, now);
++	}
++#endif
+ 	if (left != roles.left_profile or right != roles.right_profile)
+ 	{
+ 		U_LOG_I("Updating interaction profiles: from \n"
+--- a/server/driver/wivrn_session.h
++++ b/server/driver/wivrn_session.h
+@@ -87,6 +87,10 @@
+ 
+ 	tracking_control control;
+ 
++#ifdef WIVRN_FEATURE_CYBERFINGER
++	cf::WivrnDriver cyberfinger; // before the controllers, which point into it
++#endif
++
+ 	wivrn_hmd hmd;
+ 	wivrn_controller left_controller;
+ 	int32_t left_controller_index;

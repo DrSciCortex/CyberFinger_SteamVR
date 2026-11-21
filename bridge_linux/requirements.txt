@@ -1,0 +1,24 @@
+# CyberFinger Bridge — Linux dependencies
+
+# BLE (cross-platform via bleak)
+bleak
+
+# System tray icon
+pystray
+pillow
+
+# Virtual gamepad (Linux uinput)
+evdev
+
+pynput
+pygobject
+python-osc
+
+# Nothing more for the features shared with the Windows bridge (../bridge: haptics,
+# pink button, SlimeVR, skeleton): they are standard library only. The right pink
+# button's microphone mute runs wpctl (wireplumber) or pactl (libpulse), if set to it.
+
+# tkinter is usually pre-installed; if not:
+#   Ubuntu/Debian: sudo apt install python3-tk
+#   Fedora:        sudo dnf install python3-tkinter
+#   Arch:          sudo pacman -S tk

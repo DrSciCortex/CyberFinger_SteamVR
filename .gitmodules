@@ -1,0 +1,6 @@
+[submodule "openvr"]
+	path = openvr
+	url = https://github.com/ValveSoftware/openvr.git
+[submodule "third_party/minhook"]
+	path = third_party/minhook
+	url = https://github.com/TsudaKageyu/minhook.git

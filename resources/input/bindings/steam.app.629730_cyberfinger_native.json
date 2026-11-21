@@ -1,0 +1,162 @@
+{
+  "action_manifest_version": 0,
+  "alias_info": {},
+  "app_key": "steam.app.629730",
+  "bindings": {
+    "/actions/default": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "position": {
+              "output": "/actions/default/in/move"
+            },
+            "click": {
+              "output": "/actions/default/in/kick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/thumbstick",
+          "mode": "scroll",
+          "inputs": {
+            "scroll": {
+              "output": "/actions/default/in/scrollui"
+            }
+          },
+          "parameters": {
+            "scroll_mode": "smooth"
+          }
+        },
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/default/in/clickui"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "position": {
+              "output": "/actions/default/in/turn"
+            },
+            "click": {
+              "output": "/actions/default/in/jump"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "scroll",
+          "inputs": {
+            "scroll": {
+              "output": "/actions/default/in/scrollui"
+            }
+          },
+          "parameters": {
+            "scroll_mode": "smooth"
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/default/in/clickui"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/default/in/menu"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/default/in/externalview"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/a_hold",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/default/in/screenshot"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/pink",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/default/in/externalviewlock"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "position": {
+              "output": "/actions/default/in/height"
+            }
+          }
+        }
+      ],
+      "poses": [
+        {
+          "path": "/user/hand/left/pose/raw",
+          "output": "/actions/default/in/pose"
+        },
+        {
+          "path": "/user/hand/right/pose/raw",
+          "output": "/actions/default/in/pose"
+        }
+      ],
+      "skeleton": [
+        {
+          "path": "/user/hand/left/input/skeleton/left",
+          "output": "/actions/default/in/skeletonlefthand"
+        },
+        {
+          "path": "/user/hand/right/input/skeleton/right",
+          "output": "/actions/default/in/skeletonrighthand"
+        }
+      ],
+      "haptics": [
+        {
+          "path": "/user/hand/left/output/haptic",
+          "output": "/actions/default/out/haptic"
+        },
+        {
+          "path": "/user/hand/right/output/haptic",
+          "output": "/actions/default/out/haptic"
+        }
+      ]
+    }
+  },
+  "category": "steamvr_input",
+  "controller_type": "cyberfinger",
+  "description": "REQUIRES CybrFngr Native mod and native-telemetry CyberFinger driver. Wrap/pinch contact grabs, catches, spell circuits and throw traces. Triggers use/cast/pull symmetrically. Grip: held-item alternate use or empty-hand TK. Dominant MENU: slow time; support MENU: spells. Dual-magic and left-handed modes in mod options. During TK, MENU spins; trigger+MENU repels. Sticks move/kick and turn/jump. Wrist black: left menu/right camera (hold screenshot); right pink camera lock; left pink dashboard. Open hands and release keys once after activation. Hardware validation required.",
+  "interaction_profile": "",
+  "name": "CyberFinger Blade & Sorcery - NATIVE neon gestures",
+  "options": {
+    "simulated_controller_type": "knuckles",
+    "simulate_rendermodel": "none"
+  },
+  "simulated_actions": []
+}

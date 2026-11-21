@@ -1,0 +1,192 @@
+[
+    {
+        "title": "CyberFinger",
+        "show_without_hmd": true,
+        "values": [
+            {
+                "name": "/settings/driver_cyberfinger/active",
+                "control": "toggle",
+                "label": "CyberFinger controllers active (off: the headset's own hand tracking takes the hands)"
+            },
+            {
+                "name": "/settings/driver_cyberfinger/optical_tap_hook",
+                "control": "toggle",
+                "label": "Use headset hand tracking for fingers (Steam Link)",
+                "requires_restart": true
+            },
+            {
+                "name": "/settings/driver_cyberfinger/forward_tap_system_button",
+                "control": "toggle",
+                "label": "Quest left palm pinch also opens the dashboard (the left pink button always does)"
+            },
+            {
+                "name": "/settings/driver_cyberfinger/black_hold_ms",
+                "control": "slider",
+                "label": "Black button long press (ms): held this long it's the A held input instead of A (Resonite: FluxAction1 left, FluxAction2 right, with the MoreFluxActions mod); A then acts on release. 0 = no long press",
+                "requires_restart": true,
+                "min": 0,
+                "max": 2000,
+                "step": 50,
+                "decimals": 0
+            },
+            {
+                "name": "/settings/driver_cyberfinger/pose_filter",
+                "control": "toggle",
+                "label": "Filter Steam Link's hand pose (off: pass it through as streamed; Virtual Desktop's is never filtered)"
+            },
+            {
+                "name": "/settings/driver_cyberfinger/pose_filter_min_cutoff",
+                "control": "slider",
+                "label": "Pose filter: smoothing when still (Hz, lower = smoother)",
+                "min": 0.1,
+                "max": 5.0,
+                "step": 0.1,
+                "decimals": 1
+            },
+            {
+                "name": "/settings/driver_cyberfinger/pose_filter_beta",
+                "control": "slider",
+                "label": "Pose filter: responsiveness when moving (higher = less lag)",
+                "min": 0,
+                "max": 60,
+                "step": 1,
+                "decimals": 0
+            },
+            {
+                "name": "/settings/driver_cyberfinger/pose_prediction",
+                "control": "slider",
+                "label": "Pose prediction (0 = none, 1 = full)",
+                "min": 0,
+                "max": 1.5,
+                "step": 0.05,
+                "decimals": 2
+            },
+            {
+                "name": "/settings/driver_cyberfinger/pose_rotation_prediction",
+                "control": "slider",
+                "label": "Rotation prediction (0 = none, 1 = full; above 0 the laser jitters)",
+                "min": 0,
+                "max": 1.5,
+                "step": 0.05,
+                "decimals": 2
+            },
+            {
+                "name": "/settings/driver_cyberfinger/pose_filter_gate_cm",
+                "control": "slider",
+                "label": "Pose filter: glitch threshold (cm)",
+                "advanced_only": true,
+                "min": 1,
+                "max": 30,
+                "step": 1,
+                "decimals": 0
+            },
+            {
+                "name": "/settings/driver_cyberfinger/imu_fusion",
+                "control": "toggle",
+                "label": "Hand orientation from the CyberFinger's IMU (the headset keeps it aligned; also through occlusions)"
+            },
+            {
+                "name": "/settings/driver_cyberfinger/yield_to_controllers",
+                "control": "toggle",
+                "label": "Hand over to the Touch controllers when you pick them up, and take the hands back when hand tracking returns"
+            },
+            {
+                "name": "/settings/driver_cyberfinger/hide_other_hand_controllers",
+                "control": "toggle",
+                "label": "Hide the streamer's hand tracking and other hand controllers from apps while CyberFinger holds the hands",
+                "advanced_only": true
+            },
+            {
+                "name": "/settings/driver_cyberfinger/debug_captures",
+                "control": "toggle",
+                "label": "Debug captures: record hand data on request (tools/analyze_tap_capture.py)",
+                "advanced_only": true
+            },
+            {
+                "name": "/settings/driver_cyberfinger/grab_tap_to_hold",
+                "control": "toggle",
+                "label": "Grab: tap to hold (a quick tap of the grip holds until the next press; off: the grab follows the grip)"
+            },
+            {
+                "name": "/settings/driver_cyberfinger/grab_tap_ms",
+                "control": "slider",
+                "label": "Grab: with tap to hold, a tap shorter than this (ms) holds",
+                "requires_restart": true,
+                "min": 0,
+                "max": 500,
+                "step": 10,
+                "decimals": 0
+            },
+            {
+                "name": "/settings/driver_cyberfinger/skeletal_tracking_level",
+                "control": "select",
+                "label": "Skeletal tracking level",
+                "requires_restart": true,
+                "options": [
+                    {
+                        "value": "full",
+                        "label": "Full (camera-tracked hands)"
+                    },
+                    {
+                        "value": "partial",
+                        "label": "Partial (VRChat: keeps its hand-gesture controls off)"
+                    }
+                ]
+            },
+            {
+                "name": "/settings/driver_cyberfinger/button_system",
+                "control": "select",
+                "label": "CyberFinger button for the SteamVR dashboard",
+                "requires_restart": true,
+                "options": [
+                    {
+                        "value": "NONE",
+                        "label": "None"
+                    },
+                    {
+                        "value": "C",
+                        "label": "C"
+                    },
+                    {
+                        "value": "D",
+                        "label": "D"
+                    },
+                    {
+                        "value": "E",
+                        "label": "E"
+                    }
+                ]
+            },
+            {
+                "name": "/settings/driver_cyberfinger/grip_angle_x",
+                "control": "slider",
+                "label": "Fallback pose rotation X (no headset skeleton)",
+                "advanced_only": true,
+                "min": -180,
+                "max": 180,
+                "step": 1,
+                "decimals": 0
+            },
+            {
+                "name": "/settings/driver_cyberfinger/grip_angle_y",
+                "control": "slider",
+                "label": "Fallback pose rotation Y (no headset skeleton)",
+                "advanced_only": true,
+                "min": -180,
+                "max": 180,
+                "step": 1,
+                "decimals": 0
+            },
+            {
+                "name": "/settings/driver_cyberfinger/grip_angle_z",
+                "control": "slider",
+                "label": "Fallback pose rotation Z (no headset skeleton)",
+                "advanced_only": true,
+                "min": -180,
+                "max": 180,
+                "step": 1,
+                "decimals": 0
+            }
+        ]
+    }
+]

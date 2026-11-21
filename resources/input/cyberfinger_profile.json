@@ -1,0 +1,330 @@
+{
+  "jsonid": "input_profile",
+  "controller_type": "cyberfinger",
+  "device_class": "TrackedDeviceClass_Controller",
+  "resource_root": "cyberfinger",
+  "driver_name": "cyberfinger",
+  "hand_priority": 1000,
+  "legacy_binding": "{cyberfinger}/input/legacy_bindings_cyberfinger.json",
+  "remapping": "{cyberfinger}/input/cyberfinger_remapping.json",
+  "input_bindingui_mode": "controller_handed",
+  "should_show_binding_errors": true,
+  "input_bindingui_left": {
+    "transform": "scale(-1,1)",
+    "image": "{cyberfinger}/icons/steamvr_cybrfngr_right_transp.png"
+  },
+  "input_bindingui_right": {
+    "image": "{cyberfinger}/icons/steamvr_cybrfngr_right_transp.png"
+  },
+  "input_source": {
+    "/input/trigger": {
+      "type": "trigger",
+      "click": true,
+      "value": true,
+      "binding_image_point": [
+        621,
+        252
+      ],
+      "order": 1
+    },
+    "/input/grip": {
+      "type": "trigger",
+      "click": true,
+      "value": true,
+      "binding_image_point": [
+        671,
+        381
+      ],
+      "order": 2
+    },
+    "/input/grab": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        671,
+        381
+      ],
+      "order": 2
+    },
+    "/input/thumbstick": {
+      "type": "joystick",
+      "click": true,
+      "binding_image_point": [
+        780,
+        191
+      ],
+      "order": 3
+    },
+    "/input/b": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        744,
+        383
+      ],
+      "order": 4
+    },
+    "/input/a": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        698,
+        978
+      ],
+      "order": 5
+    },
+    "/input/a_hold": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        698,
+        978
+      ],
+      "order": 6
+    },
+    "/input/c": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        785,
+        372
+      ],
+      "order": 7
+    },
+    "/input/d": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        785,
+        372
+      ],
+      "order": 8
+    },
+    "/input/e": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        785,
+        372
+      ],
+      "order": 9
+    },
+    "/input/system": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        695,
+        1131
+      ],
+      "order": 10
+    },
+    "/input/pink": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        695,
+        1131
+      ],
+      "order": 11
+    },
+    "/input/index_pinch": {
+      "type": "trigger",
+      "value": true,
+      "binding_image_point": [
+        490,
+        45
+      ],
+      "order": 21
+    },
+    "/input/middle_pinch": {
+      "type": "trigger",
+      "value": true,
+      "binding_image_point": [
+        285,
+        195
+      ],
+      "order": 22
+    },
+    "/input/ring_pinch": {
+      "type": "trigger",
+      "value": true,
+      "binding_image_point": [
+        338,
+        338
+      ],
+      "order": 23
+    },
+    "/input/pinky_pinch": {
+      "type": "trigger",
+      "value": true,
+      "click": true,
+      "binding_image_point": [
+        371,
+        429
+      ],
+      "order": 24
+    },
+    "/input/grasp": {
+      "type": "trigger",
+      "value": true,
+      "binding_image_point": [
+        470,
+        300
+      ],
+      "order": 25
+    },
+    "/input/index_point": {
+      "type": "button",
+      "click": true,
+      "touch": true,
+      "binding_image_point": [
+        560,
+        120
+      ],
+      "order": 26
+    },
+    "/input/two_finger_point": {
+      "type": "button",
+      "click": true,
+      "binding_image_point": [
+        610,
+        170
+      ],
+      "order": 27
+    },
+    "/input/finger/index": {
+      "type": "trigger",
+      "visibility": "InputValueVisibility_AvailableButHidden",
+      "binding_image_point": [
+        560,
+        120
+      ],
+      "order": 101
+    },
+    "/input/finger/middle": {
+      "type": "trigger",
+      "visibility": "InputValueVisibility_AvailableButHidden",
+      "binding_image_point": [
+        400,
+        190
+      ],
+      "order": 102
+    },
+    "/input/finger/ring": {
+      "type": "trigger",
+      "visibility": "InputValueVisibility_AvailableButHidden",
+      "binding_image_point": [
+        410,
+        300
+      ],
+      "order": 103
+    },
+    "/input/finger/pinky": {
+      "type": "trigger",
+      "visibility": "InputValueVisibility_AvailableButHidden",
+      "binding_image_point": [
+        420,
+        380
+      ],
+      "order": 104
+    },
+    "/input/skeleton/left": {
+      "type": "skeleton",
+      "skeleton": "/skeleton/hand/left",
+      "side": "left",
+      "binding_image_point": [
+        740,
+        560
+      ]
+    },
+    "/input/skeleton/right": {
+      "type": "skeleton",
+      "skeleton": "/skeleton/hand/right",
+      "side": "right",
+      "binding_image_point": [
+        740,
+        560
+      ]
+    },
+    "/pose/raw": {
+      "type": "pose",
+      "binding_image_point": [
+        725,
+        740
+      ]
+    },
+    "/pose/base": {
+      "type": "pose",
+      "binding_image_point": [
+        725,
+        740
+      ]
+    },
+    "/pose/handgrip": {
+      "type": "pose",
+      "binding_image_point": [
+        650,
+        520
+      ]
+    },
+    "/pose/grip": {
+      "type": "pose",
+      "binding_image_point": [
+        650,
+        520
+      ]
+    },
+    "/pose/tip": {
+      "type": "pose",
+      "binding_image_point": [
+        490,
+        45
+      ]
+    },
+    "/output/haptic": {
+      "type": "vibration",
+      "binding_image_point": [
+        715,
+        140
+      ]
+    }
+  },
+  "default_bindings": [
+    {
+      "app_key": "system.generated.cyberpunk2077.exe",
+      "binding_url": "bindings/system.generated.cyberpunk2077.exe_cyberfinger.json"
+    },
+    {
+      "app_key": "steam.app.1091500",
+      "binding_url": "bindings/steam.app.1091500_cyberfinger.json"
+    },
+    {
+      "app_key": "steam.app.438100",
+      "binding_url": "bindings/steam.app.438100_cyberfinger.json"
+    },
+    {
+      "app_key": "steam.app.2519830",
+      "binding_url": "bindings/steam.app.2519830_cyberfinger.json"
+    },
+    {
+      "app_key": "system.generated.renderite.renderer.exe",
+      "binding_url": "bindings/system.generated.renderite.renderer.exe_cyberfinger.json"
+    },
+    {
+      "app_key": "steam.app.3454604410",
+      "binding_url": "bindings/steam.app.3454604410_cyberfinger.json"
+    },
+    {
+      "app_key": "openvr.component.vrcompositor",
+      "binding_url": "bindings/vrcompositor_cyberfinger.json"
+    },
+    {
+      "app_key": "steam.app.629730",
+      "binding_url": "bindings/steam.app.629730_cyberfinger.json"
+    },
+    {
+      "app_key": "system.generated.openxr.cyberpunkvrport.cyberpunk2077.exe",
+      "binding_url": "bindings/system.generated.openxr.cyberpunkvrport.cyberpunk2077.exe_cyberfinger.json"
+    }
+  ]
+}

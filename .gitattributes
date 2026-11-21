@@ -1,0 +1,15 @@
+# Line endings: the repository stores text files with LF, and each checkout converts them to that platform's
+# convention, whatever the developer's own core.autocrlf, so Windows and Linux developers share the same files.
+* text=auto
+
+# cmd.exe misparses batch files with LF line endings: always check them out with CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never converted: byte-exact test vectors (tests/protocol_vectors.bin), models and binary assets.
+*.bin binary
+*.npz binary
+*.png binary
+*.ico binary
+*.dll binary
+*.exe binary

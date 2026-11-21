@@ -1,0 +1,201 @@
+{
+  "action_manifest_version": 0,
+  "alias_info": {},
+  "bindings": {
+    "/actions/legacy": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "trigger",
+          "inputs": {
+            "pull": {
+              "output": "/actions/legacy/in/Left_Axis1_Value"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "button",
+          "parameters": {
+            "click_activate_threshold": "0.55",
+            "click_deactivate_threshold": "0.5",
+            "haptic_amplitude": "0"
+          },
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Left_Axis1_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "position": {
+              "output": "/actions/legacy/in/Left_Axis0_Value"
+            },
+            "click": {
+              "output": "/actions/legacy/in/Left_Axis0_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/grip",
+          "mode": "trigger",
+          "inputs": {
+            "pull": {
+              "output": "/actions/legacy/in/Left_Axis2_Value1"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Left_Grip_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Left_A_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Left_ApplicationMenu_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/system",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Left_System_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "trigger",
+          "inputs": {
+            "pull": {
+              "output": "/actions/legacy/in/Right_Axis1_Value"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "parameters": {
+            "click_activate_threshold": "0.55",
+            "click_deactivate_threshold": "0.5",
+            "haptic_amplitude": "0"
+          },
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Right_Axis1_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "position": {
+              "output": "/actions/legacy/in/Right_Axis0_Value"
+            },
+            "click": {
+              "output": "/actions/legacy/in/Right_Axis0_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/grip",
+          "mode": "trigger",
+          "inputs": {
+            "pull": {
+              "output": "/actions/legacy/in/Right_Axis2_Value1"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/grip",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Right_Grip_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Right_A_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Right_ApplicationMenu_Press"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/system",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/legacy/in/Right_System_Press"
+            }
+          }
+        }
+      ],
+      "poses": [
+        {
+          "path": "/user/hand/left/pose/raw",
+          "output": "/actions/legacy/in/Left_Pose"
+        },
+        {
+          "path": "/user/hand/right/pose/raw",
+          "output": "/actions/legacy/in/Right_Pose"
+        }
+      ],
+      "haptics": [
+        {
+          "path": "/user/hand/left/output/haptic",
+          "output": "/actions/legacy/out/Left_Haptic"
+        },
+        {
+          "path": "/user/hand/right/output/haptic",
+          "output": "/actions/legacy/out/Right_Haptic"
+        }
+      ]
+    }
+  },
+  "category": "steamvr_input",
+  "controller_type": "cyberfinger",
+  "description": "For apps using the legacy input API: presents CyberFinger as an Index controller.",
+  "interaction_profile": "",
+  "name": "CyberFinger legacy bindings (Index emulation)",
+  "options": {
+    "mirror_actions": false,
+    "simulated_controller_type": "knuckles",
+    "simulate_rendermodel": true
+  },
+  "simulated_actions": []
+}

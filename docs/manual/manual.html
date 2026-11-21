@@ -1,0 +1,657 @@
+<title>CyberFinger Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #f1f2f5;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #586070;
+    --line: #d7dae1;
+    --accent: #b8006a;
+    --pink: #e6007e;
+    --pink-ink: #ffffff;
+    --stage-a: #e9ecf0;
+    --stage-b: #c9ced7;
+    --code-bg: #eceef2;
+    --shadow: 0 1px 2px rgba(21, 23, 28, .06), 0 6px 24px rgba(21, 23, 28, .06);
+    --display: "Barlow Semi Condensed", "Barlow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --body: "Barlow", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #111317;
+      --surface: #191b21;
+      --ink: #eceef3;
+      --muted: #9ba2b0;
+      --line: #2b2f38;
+      --accent: #ff5cb3;
+      --pink: #ff2e9d;
+      --stage-a: #d9dde3;
+      --stage-b: #aeb4bf;
+      --code-bg: #22252d;
+      --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #111317;
+    --surface: #191b21;
+    --ink: #eceef3;
+    --muted: #9ba2b0;
+    --line: #2b2f38;
+    --accent: #ff5cb3;
+    --pink: #ff2e9d;
+    --stage-a: #d9dde3;
+    --stage-b: #aeb4bf;
+    --code-bg: #22252d;
+    --shadow: none;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 17px/1.6 var(--body);
+    padding-inline: 20px;
+    padding-block: 0 64px;
+  }
+  .page { max-width: 1080px; margin: 0 auto; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  code, .key {
+    font: 500 .84em/1.3 var(--mono);
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: .1em .35em;
+    white-space: nowrap;
+  }
+  p, li { max-width: 68ch; }
+
+  /* ── Cover ── */
+  .cover {
+    display: grid;
+    gap: 14px;
+    padding-block: 56px 36px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font: 600 .8rem/1 var(--display);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font: 700 clamp(3rem, 9vw, 5.6rem)/.92 var(--display);
+    letter-spacing: -.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .lede { font-size: 1.2rem; line-height: 1.5; margin: 6px 0 0; max-width: 58ch; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    font: 500 .82rem/1.4 var(--mono);
+    color: var(--muted);
+    margin-top: 10px;
+  }
+
+  /* ── Contents ── */
+  .toc { padding-block: 26px; border-bottom: 1px solid var(--line); }
+  .toc h2 { font: 600 .8rem/1 var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+  .toc ol {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 24px;
+    counter-reset: toc;
+  }
+  .toc li { counter-increment: toc; display: flex; gap: 10px; align-items: baseline; }
+  .toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    font: 500 .8rem/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .toc a { color: var(--ink); text-decoration: none; font-weight: 500; }
+  .toc a:hover { color: var(--accent); text-decoration: underline; }
+
+  /* ── Sections ── */
+  main { counter-reset: sec; }
+  section { padding-block: 44px 8px; scroll-margin-top: 16px; }
+  section > h2 {
+    counter-increment: sec;
+    display: flex; gap: 14px; align-items: baseline;
+    font: 700 clamp(1.7rem, 4vw, 2.2rem)/1.1 var(--display);
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  section > h2::before {
+    content: counter(sec, decimal-leading-zero);
+    font: 500 .95rem/1 var(--mono);
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    transform: translateY(-.35em);
+  }
+  h3 { font: 600 1.25rem/1.25 var(--display); margin: 28px 0 8px; }
+  ul, ol { padding-left: 1.2em; }
+  li + li { margin-top: 4px; }
+
+  /* ── CyberFinger figures ── */
+  .cyberfingers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    margin-block: 22px 18px;
+  }
+  @media (max-width: 720px) { .cyberfingers { grid-template-columns: 1fr; } }
+  .cyberfinger { margin: 0; }
+  .stage {
+    position: relative;
+    max-width: 100%;
+    border-radius: 14px;
+    background: radial-gradient(120% 90% at 50% 30%, var(--stage-a), var(--stage-b));
+    overflow: hidden;
+  }
+  .stage img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .lead { stroke: #ffffff; stroke-width: 9; stroke-linecap: round; }
+  .lead-core { stroke: var(--pink); stroke-width: 4; stroke-linecap: round; }
+  .spot { fill: #ffffff; stroke: var(--pink); stroke-width: 6; }
+  .badge circle { fill: var(--pink); stroke: #ffffff; stroke-width: 7; }
+  .badge text {
+    fill: var(--pink-ink);
+    font: 700 46px/1 var(--display);
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+  .cyberfinger figcaption {
+    display: flex; justify-content: space-between; gap: 12px;
+    font: 600 .95rem/1.3 var(--display); letter-spacing: .04em; text-transform: uppercase;
+    margin-top: 10px; color: var(--muted);
+  }
+  .cyberfinger figcaption span:last-child { text-transform: none; letter-spacing: 0; font: 400 .9rem/1.3 var(--body); }
+
+  /* ── Screenshots ── */
+  .shot { margin: 18px 0 10px; max-width: 760px; }
+  .shot .stage { background: #111318; border: 1px solid var(--line); border-radius: 10px; }
+  .shot .badge circle { stroke-width: 4; }
+  .shot .badge text { font-size: 26px; }
+  .shot figcaption { margin-top: 8px; color: var(--muted); font-size: .9rem; }
+  .shot.settings { max-width: 620px; }
+  .mod-icon { float: right; width: 96px; height: 96px; margin: 0 0 12px 18px; }
+  .tag { font: 500 .72rem/1 var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px;
+         padding: 2px 5px; margin-left: 4px; white-space: nowrap; }
+
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; margin-block: 14px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .97rem; }
+  th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  th {
+    font: 600 .78rem/1.2 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+    background: transparent;
+  }
+  td.num { width: 1%; white-space: nowrap; }
+  .dot {
+    display: inline-grid; place-items: center;
+    width: 1.7em; height: 1.7em; border-radius: 50%;
+    background: var(--pink); color: var(--pink-ink);
+    font: 700 .9rem/1 var(--display); font-variant-numeric: tabular-nums;
+  }
+  td strong { font-weight: 600; }
+  .where { color: var(--muted); font-size: .9rem; display: block; }
+  .default { font: 500 .85rem/1.3 var(--mono); white-space: nowrap; }
+
+  /* ── Steps ── */
+  .steps { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 12px; counter-reset: step; }
+  .steps li {
+    counter-increment: step;
+    display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); gap: 14px; align-items: start;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; max-width: none;
+  }
+  .steps li::before {
+    content: counter(step);
+    display: grid; place-items: center;
+    width: 2.2rem; height: 2.2rem; border-radius: 50%;
+    border: 2px solid var(--accent); color: var(--accent);
+    font: 700 1.05rem/1 var(--display);
+  }
+  .steps li > div { max-width: 70ch; }
+  .steps b { font-weight: 600; }
+
+  .note {
+    border-left: 3px solid var(--accent);
+    padding: 4px 0 4px 16px;
+    margin: 18px 0;
+    color: var(--ink);
+    max-width: 70ch;
+  }
+  .note b { color: var(--accent); font-weight: 600; }
+
+  /* ── Vibration patterns ── */
+  .patterns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-block: 14px 6px; }
+  .pattern { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; }
+  .pattern svg { width: 100%; height: 34px; }
+  .pattern .axis { stroke: var(--line); stroke-width: 1.5; }
+  .pattern .on { fill: var(--pink); }
+  .pattern p { margin: 0; font-size: .95rem; }
+  .pattern p b { font-weight: 600; }
+
+  dl.faq { margin: 12px 0 0; display: grid; gap: 14px; }
+  dl.faq div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  dl.faq dt { font: 600 1.05rem/1.3 var(--display); margin-bottom: 4px; }
+  dl.faq dd { margin: 0; max-width: 72ch; }
+
+  footer {
+    margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between;
+    color: var(--muted); font-size: .9rem;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    a { transition: color .15s; }
+  }
+</style>
+
+<div class="page">
+  <header class="cover">
+    <span class="eyebrow">Instruction manual</span>
+    <h1>CyberFinger</h1>
+    <p class="lede">A pair of hand-mounted VR controllers. Your fingers come from the headset's hand tracking, your actions from the CyberFinger's buttons and joystick. This manual covers SteamVR with a Meta Quest over Steam Link or Virtual Desktop, VRChat and Resonite.</p>
+    <div class="meta"><span>SteamVR driver 2.2</span><span>CyberFinger firmware 1.4.1</span><span>CyberFinger Bridge 2.2</span></div>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#need">What you need</a></li>
+      <li><a href="#controls">The controls</a></li>
+      <li><a href="#setup">Setting up</a></li>
+      <li><a href="#bridge">CyberFinger Bridge</a></li>
+      <li><a href="#playing">In VR</a></li>
+      <li><a href="#resonite">Resonite</a></li>
+      <li><a href="#fluxactions">ProtoFlux actions</a></li>
+      <li><a href="#vrchat">VRChat</a></li>
+      <li><a href="#dashboard">SteamVR dashboard</a></li>
+      <li><a href="#mic">Microphone and vibration</a></li>
+      <li><a href="#power">Power and charging</a></li>
+      <li><a href="#settings">Settings</a></li>
+      <li><a href="#trouble">Troubleshooting</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="need">
+      <h2>What you need</h2>
+      <ul>
+        <li>A pair of CyberFingers, left and right.</li>
+        <li>A Windows PC with Bluetooth LE and SteamVR.</li>
+        <li>A Meta Quest with hand tracking turned on, streaming to SteamVR through Steam Link or Virtual Desktop.</li>
+        <li>CyberFinger Bridge, which comes with the CyberFinger SteamVR driver in one installer.</li>
+      </ul>
+      <p>The headset tracks your hands and CyberFinger takes that tracking over: it adds its buttons and joystick, and steadies the hand's rotation with its motion sensor. When a hand leaves the cameras' view, it keeps turning with your wrist.</p>
+    </section>
+
+    <section id="controls">
+      <h2>The controls</h2>
+      <p>Both CyberFingers have the same controls. Only the pink button does something different on each hand.</p>
+
+      <div class="cyberfingers">
+        <figure class="cyberfinger">
+          <div class="stage" style="aspect-ratio: 1145 / 1374;">
+            <img src="../../resources/icons/steamvr_cybrfngr_left_transp.png" width="1145" height="1374" alt="The left CyberFinger: a finger module with a pink joystick cap and black buttons, and a wrist module with a screen, a black button, a USB-C port and a pink button.">
+            <svg viewBox="0 0 1145 1374" aria-hidden="true">
+              <g><line class="lead" x1="440" y1="260" x2="290" y2="140"/><line class="lead-core" x1="440" y1="260" x2="290" y2="140"/><circle class="spot" cx="440" cy="260" r="11"/><g class="badge" transform="translate(290 140)"><circle r="38"/><text>1</text></g></g>
+              <g><line class="lead" x1="646" y1="318" x2="800" y2="330"/><line class="lead-core" x1="646" y1="318" x2="800" y2="330"/><circle class="spot" cx="646" cy="318" r="11"/><g class="badge" transform="translate(800 330)"><circle r="38"/><text>2</text></g></g>
+              <g><line class="lead" x1="570" y1="472" x2="640" y2="600"/><line class="lead-core" x1="570" y1="472" x2="640" y2="600"/><circle class="spot" cx="570" cy="472" r="11"/><g class="badge" transform="translate(640 600)"><circle r="38"/><text>3</text></g></g>
+              <g><line class="lead" x1="482" y1="466" x2="490" y2="610"/><line class="lead-core" x1="482" y1="466" x2="490" y2="610"/><circle class="spot" cx="482" cy="466" r="11"/><g class="badge" transform="translate(490 610)"><circle r="38"/><text>4</text></g></g>
+              <g><line class="lead" x1="420" y1="444" x2="285" y2="530"/><line class="lead-core" x1="420" y1="444" x2="285" y2="530"/><circle class="spot" cx="420" cy="444" r="11"/><g class="badge" transform="translate(285 530)"><circle r="38"/><text>5</text></g></g>
+              <g><line class="lead" x1="568" y1="1058" x2="800" y2="1020"/><line class="lead-core" x1="568" y1="1058" x2="800" y2="1020"/><circle class="spot" cx="568" cy="1058" r="11"/><g class="badge" transform="translate(800 1020)"><circle r="38"/><text>6</text></g></g>
+              <g><line class="lead" x1="566" y1="1148" x2="800" y2="1150"/><line class="lead-core" x1="566" y1="1148" x2="800" y2="1150"/><circle class="spot" cx="566" cy="1148" r="11"/><g class="badge" transform="translate(800 1150)"><circle r="38"/><text>7</text></g></g>
+              <g><line class="lead" x1="564" y1="1238" x2="800" y2="1280"/><line class="lead-core" x1="564" y1="1238" x2="800" y2="1280"/><circle class="spot" cx="564" cy="1238" r="11"/><g class="badge" transform="translate(800 1280)"><circle r="38"/><text>8</text></g></g>
+            </svg>
+          </div>
+          <figcaption><span>Left CyberFinger</span><span>Pink button: SteamVR dashboard</span></figcaption>
+        </figure>
+
+        <figure class="cyberfinger">
+          <div class="stage" style="aspect-ratio: 1254 / 1254;">
+            <img src="../../resources/icons/steamvr_cybrfngr_right_transp.png" width="1254" height="1254" alt="The right CyberFinger, the mirror image of the left one.">
+            <svg viewBox="0 0 1254 1254" aria-hidden="true">
+              <g><line class="lead" x1="780" y1="191" x2="940" y2="80"/><line class="lead-core" x1="780" y1="191" x2="940" y2="80"/><circle class="spot" cx="780" cy="191" r="11"/><g class="badge" transform="translate(940 80)"><circle r="38"/><text>1</text></g></g>
+              <g><line class="lead" x1="621" y1="252" x2="470" y2="200"/><line class="lead-core" x1="621" y1="252" x2="470" y2="200"/><circle class="spot" cx="621" cy="252" r="11"/><g class="badge" transform="translate(470 200)"><circle r="38"/><text>2</text></g></g>
+              <g><line class="lead" x1="671" y1="381" x2="610" y2="500"/><line class="lead-core" x1="671" y1="381" x2="610" y2="500"/><circle class="spot" cx="671" cy="381" r="11"/><g class="badge" transform="translate(610 500)"><circle r="38"/><text>3</text></g></g>
+              <g><line class="lead" x1="744" y1="383" x2="760" y2="515"/><line class="lead-core" x1="744" y1="383" x2="760" y2="515"/><circle class="spot" cx="744" cy="383" r="11"/><g class="badge" transform="translate(760 515)"><circle r="38"/><text>4</text></g></g>
+              <g><line class="lead" x1="785" y1="372" x2="930" y2="440"/><line class="lead-core" x1="785" y1="372" x2="930" y2="440"/><circle class="spot" cx="785" cy="372" r="11"/><g class="badge" transform="translate(930 440)"><circle r="38"/><text>5</text></g></g>
+              <g><line class="lead" x1="698" y1="978" x2="1050" y2="930"/><line class="lead-core" x1="698" y1="978" x2="1050" y2="930"/><circle class="spot" cx="698" cy="978" r="11"/><g class="badge" transform="translate(1050 930)"><circle r="38"/><text>6</text></g></g>
+              <g><line class="lead" x1="690" y1="1062" x2="1050" y2="1060"/><line class="lead-core" x1="690" y1="1062" x2="1050" y2="1060"/><circle class="spot" cx="690" cy="1062" r="11"/><g class="badge" transform="translate(1050 1060)"><circle r="38"/><text>7</text></g></g>
+              <g><line class="lead" x1="695" y1="1131" x2="1050" y2="1185"/><line class="lead-core" x1="695" y1="1131" x2="1050" y2="1185"/><circle class="spot" cx="695" cy="1131" r="11"/><g class="badge" transform="translate(1050 1185)"><circle r="38"/><text>8</text></g></g>
+            </svg>
+          </div>
+          <figcaption><span>Right CyberFinger</span><span>Pink button: microphone on/off, a Flux Action, or the app's mute</span></figcaption>
+        </figure>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Control</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="num"><span class="dot">1</span></td><td><strong>Joystick</strong><span class="where">Pink cap, finger module. Push it to click.</span></td><td>Move and turn. Pushing it is a second action (Resonite) or a middle click (SteamVR dashboard).</td></tr>
+            <tr><td class="num"><span class="dot">2</span></td><td><strong>Trigger</strong><span class="where">Finger module</span></td><td>The main action: use, press, click.</td></tr>
+            <tr><td class="num"><span class="dot">3</span></td><td><strong>Grab</strong><span class="where">Button row, finger module</span></td><td>Grab things. A quick tap holds on until you press again; a longer press holds only while you press. The tap-to-hold can be switched off in the <a href="#settings">settings</a>.</td></tr>
+            <tr><td class="num"><span class="dot">4</span></td><td><strong>Menu</strong><span class="where">Button row, finger module</span></td><td>Context menu in Resonite, back in the SteamVR dashboard.</td></tr>
+            <tr><td class="num"><span class="dot">5</span></td><td><strong>C</strong><span class="where">Button row, on some hardware revisions and models only; D and E too</span></td><td>In Resonite, <a href="#fluxactions">Flux Actions</a> for your own ProtoFlux: C is 3 on the left CyberFinger and 4 on the right, D is 5 and 6, E is 7 and 8. Elsewhere, free to assign in SteamVR's controller bindings.</td></tr>
+            <tr><td class="num"><span class="dot">6</span></td><td><strong>Black button</strong><span class="where">Wrist module. Press, or hold for about a second.</span></td><td>Press: Resonite's dash, home in the SteamVR dashboard. It acts when you let go. Hold: a <a href="#fluxactions">Flux Action</a> for your own ProtoFlux in Resonite (FluxAction1 left, FluxAction2 right).</td></tr>
+            <tr><td class="num"><span class="dot">7</span></td><td><strong>USB-C port</strong><span class="where">Wrist module</span></td><td>Power and charging, also while you play.</td></tr>
+            <tr><td class="num"><span class="dot">8</span></td><td><strong>Pink button</strong><span class="where">Wrist module</span></td><td>Left CyberFinger: opens and closes the SteamVR dashboard. Right CyberFinger: mutes and unmutes your microphone, fires a <a href="#fluxactions">Flux Action</a>, or works the app's own mute, as you choose in the bridge. On either CyberFinger, press to switch on, hold 5–7 s to switch off.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note"><b>Not every CyberFinger has everything.</b> Every CyberFinger has the stick, the trigger, Grab, Menu, the black and pink buttons, and a motion sensor in the wrist module. Buttons C, D and E, the motion sensor on the back of the hand (the joint IMU) and the vibration motor come with some hardware revisions and models only. Without them everything else works the same: without the joint IMU the headset alone turns the hand, and without the motor nothing vibrates.</p>
+    </section>
+
+    <section id="setup">
+      <h2>Setting up</h2>
+      <ol class="steps">
+        <li><div><b>Charge the CyberFingers and switch them on.</b> Charge through the USB-C port, then press each CyberFinger's pink button. You can also play with a CyberFinger plugged in: see <a href="#power">Power and charging</a>.</div></li>
+        <li><div><b>Install CyberFinger Bridge.</b> Close SteamVR, then run <code>CyberFingerBridge_Setup_X.Y.Z.exe</code> (the latest release). It installs the bridge app and registers the CyberFinger driver with SteamVR.</div></li>
+        <li><div><b>Pair both CyberFingers in Windows.</b> Open Settings › Bluetooth &amp; devices › Add device › Bluetooth. The CyberFingers appear as <code>CyberFinger-left-v1b</code> and <code>CyberFinger-right-v1b</code>.</div></li>
+        <li><div><b>Start the bridge.</b> Open CyberFinger Bridge, choose <b>VR Mode (BLE→SteamVR)</b> and press <b>Start</b>. Each hand panel shows its CyberFinger, the battery level and the buttons as you press them. <b>PINK</b> lights for a moment when you press a pink button, and <b>HOLD</b>, beside ST and SE, fills while you hold the black button and lights once the hold counts as a Flux Action.</div></li>
+        <li><div><b>Start VR.</b> On the Quest, turn on hand tracking and start Steam Link or Virtual Desktop, then SteamVR.</div></li>
+        <li><div><b>Show your hands.</b> SteamVR lists two CyberFinger controllers, and the hands follow your fingers.</div></li>
+        <li><div><b>Playing Resonite?</b> Add the CyberFinger mods for it: see <a href="#resonite-mods">Installing the Resonite mods</a>.</div></li>
+      </ol>
+      <p class="note"><b>First seconds.</b> Turn your hands a little while the headset sees them. On CyberFingers with the joint IMU, its motion sensor lines itself up with the headset within about a second, and keeps fine-tuning as you move.</p>
+    </section>
+
+    <section id="bridge">
+      <h2>CyberFinger Bridge</h2>
+      <p>The bridge connects the CyberFingers to your PC over Bluetooth and hands them to SteamVR (or to a virtual gamepad). Keep it running while you play. Every control has a tooltip: hover over it for a reminder.</p>
+      <figure class="shot">
+        <div class="stage" style="aspect-ratio: 1242 / 1090;">
+          <img src="images/bridge_screenshot1.png" width="1242" height="1090" alt="CyberFinger Bridge, connected in VR Mode: the mode choice and Start and Stop at the top, the options below them, and a panel per CyberFinger with its buttons, stick, trigger, motion sensors and vibration.">
+          <svg viewBox="0 0 1242 1090" aria-hidden="true">
+              <g class="badge" transform="translate(468 162)"><circle r="22"/><text>A</text></g>
+              <g class="badge" transform="translate(785 162)"><circle r="22"/><text>B</text></g>
+              <g class="badge" transform="translate(1100 83)"><circle r="22"/><text>C</text></g>
+              <g class="badge" transform="translate(302 230)"><circle r="22"/><text>D</text></g>
+              <g class="badge" transform="translate(565 275)"><circle r="22"/><text>E</text></g>
+              <g class="badge" transform="translate(528 323)"><circle r="22"/><text>F</text></g>
+              <g class="badge" transform="translate(1047 323)"><circle r="22"/><text>G</text></g>
+              <g class="badge" transform="translate(470 382)"><circle r="22"/><text>H</text></g>
+              <g class="badge" transform="translate(440 436)"><circle r="22"/><text>I</text></g>
+              <g class="badge" transform="translate(250 480)"><circle r="22"/><text>J</text></g>
+              <g class="badge" transform="translate(430 550)"><circle r="22"/><text>K</text></g>
+              <g class="badge" transform="translate(320 725)"><circle r="22"/><text>L</text></g>
+              <g class="badge" transform="translate(548 1050)"><circle r="22"/><text>M</text></g>
+          </svg>
+        </div>
+        <figcaption>CyberFinger Bridge in VR Mode, both CyberFingers connected.</figcaption>
+      </figure>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Part</th><th>What it's for</th></tr></thead>
+          <tbody>
+            <tr><td class="num"><span class="dot">A</span></td><td><strong>Mode</strong></td><td><b>VR Mode</b> is the one for SteamVR games and apps: the CyberFingers become two SteamVR hand controllers, with the headset's hand tracking, the CyberFinger's motion sensor, vibration and the pink buttons. The two <b>Gamepad Modes</b> turn the CyberFingers into one Xbox 360 controller, laid out for Resonite or for VRChat, for playing on the desktop without SteamVR: buttons and sticks only. Pick the mode before pressing Start; the bridge remembers it.</td></tr>
+            <tr><td class="num"><span class="dot">B</span></td><td><strong>Start and Stop</strong></td><td>Start finds both CyberFingers (paired in Windows and switched on) and starts forwarding them. Stop lets them go: in VR the hands then fall back to the headset's hand tracking.</td></tr>
+            <tr><td class="num"><span class="dot">C</span></td><td><strong>Status</strong></td><td>What the bridge is doing: Idle, Scanning…, Connected, Stopped, or No devices found and Connection failed when a CyberFinger can't be reached (see <a href="#trouble">Troubleshooting</a>).</td></tr>
+            <tr><td class="num"><span class="dot">D</span></td><td><strong>Auto-start on launch</strong></td><td>Starts in the last mode as soon as the bridge opens, handy when it starts with Windows. The window's close button only hides the bridge to the system tray, where it keeps running; exit it from the tray icon's menu.</td></tr>
+            <tr><td class="num"><span class="dot">E</span></td><td><strong>Right pink button</strong></td><td><b>SteamVR</b> (the default) hands the button to the game's own controls: VRChat's mute, or Resonite's with the MoreFluxActions mod set up for it. <b>mic mute</b> mutes and unmutes the Windows microphone for every app at once, confirmed on the CyberFinger's motor. <b>FluxAction</b> makes the button press a <a href="#fluxactions">Flux Action</a> in Resonite, the number beside it (42 unless you change it), for your own ProtoFlux; the microphone is then left alone and nothing vibrates. See <a href="#mic">Microphone and vibration</a>.</td></tr>
+            <tr><td class="num"><span class="dot">F</span></td><td><strong>Forward IMU to SlimeVR</strong></td><td>Only for full-body tracking with <a href="https://slimevr.dev/">SlimeVR</a>: also sends each CyberFinger's wrist sensor to the SlimeVR server on this PC as a forearm tracker, and the back-of-hand sensor (on CyberFingers with it) as a hand tracker. <b>body IMU 1 / 2</b> chooses which wrist sensor to send: every CyberFinger has sensor 1, some revisions a second one at the same spot. Works alongside any mode.</td></tr>
+            <tr><td class="num"><span class="dot">G</span></td><td><strong>Resync IMU</strong></td><td>Makes SteamVR line the CyberFingers' back-of-hand sensors up with the headset afresh, in about half a second of the hands in view. Use it when a hand's rotation looks off, for instance after putting a CyberFinger back on differently. It usually sorts itself out (see <a href="#playing">In VR</a>); this is the manual way, like tapping the back-of-hand module three times. Only for CyberFingers with that sensor, in VR Mode.</td></tr>
+            <tr><td class="num"><span class="dot">H</span></td><td><strong>Tabs</strong></td><td><b>Buttons + IMU</b> (shown) is the CyberFingers' live state. <b>Skeleton</b> shows the hand skeletons SteamVR tracks, fingers included, to check the hand tracking. <b>Console</b> is the bridge's log: connections, battery, the microphone, resyncs, triple taps and anything that went wrong.</td></tr>
+            <tr><td class="num"></td><td><strong>Stream mode</strong></td><td>The button at the right end of the tab row, under Resync IMU. For streaming or recording: everything below the top line makes way for one view of both CyberFingers that fills the window, with the hand skeletons, stick, trigger and buttons, the motion sensors and the vibration, to capture beside the game. The bridge keeps running as it is; <b>Stop stream</b>, in the middle of the top line, brings the options back.</td></tr>
+            <tr><td class="num"><span class="dot">I</span></td><td><strong>CyberFinger header</strong></td><td>Which CyberFinger, its battery level, and on the far left a counter of the reports received from it: if it stops counting, the Bluetooth link has stalled.</td></tr>
+            <tr><td class="num"><span class="dot">J</span></td><td><strong>Stick and trigger</strong></td><td>The dot follows the push-stick; the bar below shows how far the trigger is pulled.</td></tr>
+            <tr><td class="num"><span class="dot">K</span></td><td><strong>Buttons</strong></td><td>Each lights while pressed: TRIG, GRIP, C, D and E (on CyberFingers that have them), MENU, JCLK (pushing the stick), ST/SE (the black button). <b>HOLD·FA1</b> (left) or <b>HOLD·FA2</b> (right) fills while you hold the black button and lights once the hold counts as a Flux Action. <b>PINK</b> lights for a moment when you press the pink button, with what it does: dash on the left, mic or the Flux Action on the right.</td></tr>
+            <tr><td class="num"><span class="dot">L</span></td><td><strong>Motion sensors</strong></td><td>Each sensor's orientation as three axes (X red, Y green, Z blue) with its angles. <b>BODY 1</b> (and BODY 2 where fitted) is in the wrist module; <b>JOINT</b>, on CyberFingers that have it, is the back-of-hand sensor SteamVR uses for the hand's rotation. Turn your hand and the axes should follow: a sensor that doesn't move isn't working.</td></tr>
+            <tr><td class="num"><span class="dot">M</span></td><td><strong>Vibration</strong></td><td>Shows what SteamVR apps ask this CyberFinger to vibrate, in VR Mode. Click the strip for a short test pulse. CyberFingers without a motor stay still.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="playing">
+      <h2>In VR</h2>
+      <ul>
+        <li><strong>Hands in view:</strong> position and fingers come from the headset's hand tracking. On CyberFingers with the joint IMU, rotation comes from the CyberFinger, which is steadier and has no delay.</li>
+        <li><strong>Hands out of view:</strong> with the joint IMU the hand keeps turning with your wrist, and its position waits where the headset last saw it.</li>
+        <li><strong>Quest controllers:</strong> pick them up and they take over within about half a second. Put them down and show your hands, and CyberFinger takes the hands back.</li>
+        <li><strong>Gestures:</strong> no Resonite or SteamVR action comes from hand-tracking gestures. Pinches and the Quest palm pinch fired too easily, so every action comes from the CyberFinger's buttons. You can turn the palm pinch back on in the <a href="#settings">settings</a>. In Resonite, three hand shapes are <a href="#fluxactions">Flux Actions</a>, which do nothing until you build ProtoFlux for them: the thumb-pinky pinch, pointing with the index finger, and the two-finger point (index and middle out, the thumb over the other two). The pinky pinch only counts with your palm toward your face, the other fingers relaxed, and the thumb on the pinky alone: a thumb on the last two or three fingers doesn't.</li>
+        <li><strong>Taking a CyberFinger off:</strong> fine at any time. While a CyberFinger lies aside, the headset alone turns that hand; put it back on and move the hand in view, and within a second or two the CyberFinger's joint IMU takes over again. To hurry it along, tap the module on the back of the hand three times, firmly (two short pulses answer, on CyberFingers with a motor), or press <b>Resync IMU</b> in the bridge.</li>
+      </ul>
+    </section>
+
+    <section id="resonite">
+      <h2>Resonite</h2>
+      <p>CyberFinger appears to Resonite as a Touch controller, Resonite's controller mode with a dash button. Its default bindings load on their own.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Control</th><th>In Resonite</th></tr></thead>
+          <tbody>
+            <tr><td><span class="dot">2</span> Trigger</td><td>Primary action</td></tr>
+            <tr><td><span class="dot">3</span> Grab</td><td>Grab. A quick tap holds on until you press again.</td></tr>
+            <tr><td><span class="dot">1</span> Joystick</td><td>Move and turn; push for the secondary action</td></tr>
+            <tr><td><span class="dot">4</span> Menu</td><td>Context menu</td></tr>
+            <tr><td><span class="dot">6</span> Black button</td><td>Dash (when you let go)</td></tr>
+            <tr><td><span class="dot">6</span> Black button, held</td><td>FluxAction1 on the left, FluxAction2 on the right: your own ProtoFlux, with the <a href="#fluxactions">MoreFluxActions mod</a></td></tr>
+            <tr><td><span class="dot">5</span> C, D, E</td><td>Flux Actions, left and right: C 3 and 4, D 5 and 6, E 7 and 8</td></tr>
+            <tr><td>Two-finger point, pinky pinch, index point</td><td>Flux Actions from hand tracking, left and right: the two-finger point 36 and 37, the thumb-pinky pinch 38 and 39, pointing 40 and 41</td></tr>
+            <tr><td><span class="dot">8</span> Pink button</td><td>Left: SteamVR dashboard. Right: microphone on/off, or a Flux Action (FluxAction42 unless you pick another), or Resonite's mute (see <a href="#mic">Microphone</a>).</td></tr>
+            <tr><td>Your fingers</td><td>Shown on your avatar, from the headset's hand tracking</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>To change a binding, open SteamVR's controller bindings while Resonite is running and edit the CyberFinger defaults for Resonite. VRChat has its own CyberFinger defaults: see <a href="#vrchat">VRChat</a>.</p>
+      <h3 id="resonite-mods">Installing the Resonite mods</h3>
+      <p>Four mods make Resonite work fully with CyberFinger: <a href="https://github.com/DrSciCortex/MoreFluxActionsMod">MoreFluxActions</a> (<a href="#fluxactions">ProtoFlux actions</a> and mute), <a href="https://github.com/DrSciCortex/SteamVRRoleFix">SteamVRRoleFix</a> and <a href="https://github.com/DrSciCortex/CyberFingerMod">CyberFingerMod</a> (<a href="#switching">switching to the Quest controllers and back</a>), and <a href="https://github.com/SciCortex/ProximityGrab">ProximityGrab</a> (<a href="#grabbing">grabbing with your hand</a>). The CyberFinger Bridge installer installs them. They run on loaders you get with <a href="https://github.com/Kesomannen/gale">Gale</a>, the Resonite mod manager, so set Gale up first.</p>
+      <ol class="steps">
+        <li><div><b>Set up Gale.</b> Install it and add Resonite (<a href="https://modding.resonite.net/getting-started/installation/">Resonite modding: getting started</a>). Give each Resonite build you play a profile, and add <b>InterprocessLib</b> and <b>ResoniteModLoaderLoader</b> to it: Gale brings along everything else the CyberFinger mods run on, such as BepisLoader, BepInExRenderer and RenderiteHook. Steam's Resonite uses the profile named <b>Resonite</b>, or else <b>Default</b>. Another build, such as a private universe, uses the profile named like it.</div></li>
+        <li><div><b>Run the CyberFinger Bridge installer</b> (again, if you installed it before Gale) and tick <b>Install CyberFinger mods for Resonite</b>, with a box for each mod. The <b>Resonite builds</b> page lists the builds it finds, ticked: a ticked build loads its Gale profile's mods however it starts, from Steam, SteamVR, a shortcut or its own launcher, without Gale's <b>Launch</b> button. A build without a Gale profile gets SteamVRRoleFix on its own. Ticked builds also get CyberFingerMod and ProximityGrab; untick a build to leave it as it is. On <b>Resonite plugins</b>, tick the Gale profiles you play with. At the end, the installer lists what it did, and anything left for you to do.</div></li>
+        <li><div><b>Clear Resonite's launch options.</b> In Steam (Resonite › Properties › General › Launch Options), and in any shortcut that starts Resonite, take out launch scripts such as <code>LaunchModded.bat %command%</code>, BepInEx options such as <code>--bepinex-target …</code>, and <code>-LoadAssembly Libraries/ResoniteModLoader.dll</code>. Keep your own options, such as <code>-SkipIntroTutorial</code>. The mods load without them now, and with that <code>-LoadAssembly</code>, ResoniteModLoader would load twice and Resonite would stop as it starts. The installer's list names each one it finds.</div></li>
+        <li><div><b>Start Resonite however you like.</b> For a build other than Steam's, use its own shortcut or launcher: Gale's <b>Launch</b> always starts the same build, whichever profile you pick.</div></li>
+      </ol>
+      <p>After installing another build, or making its Gale profile, run the installer again, or use <b>Start menu › CyberFinger Bridge › Link Resonite builds to Gale profiles</b>. Gale keeps managing the mods: switch one off there as usual. Uninstalling CyberFinger Bridge (Windows Settings › Apps) puts every build and profile back as it was. The README's <a href="https://github.com/SciCortex/CyberFinger_SteamVR#loading-gale-mods-without-gales-launcher">Loading Gale mods without Gale's launcher</a> explains what changes in a build, and how to start it without mods to troubleshoot.</p>
+      <h3 id="grabbing">Grabbing with your hand</h3>
+      <p>With the <a href="https://github.com/SciCortex/ProximityGrab">ProximityGrab</a> mod (see <a href="#resonite-mods">Installing the Resonite mods</a>), make a fist to grab what's near your hand, without the laser, and pinch your index finger and thumb to pick something up precisely at your fingertips. The grab button grabs as before. The mod sees the gestures itself, so leave the pinch and fist gestures unbound in SteamVR's bindings; the CyberFinger defaults bind neither. To switch it off for a while, use the Grabbing item in the context menu.</p>
+      <h3 id="switching">Switching between CyberFinger and the Quest controllers</h3>
+      <p>The driver switches by itself. Pick up the Quest controllers and they take over. Put them down, or switch them off, and CyberFinger takes your hands back as soon as the headset tracks them again. Resonite needs two small mods to follow every switch (see <a href="#resonite-mods">Installing the Resonite mods</a>):</p>
+      <ul>
+        <li><a href="https://github.com/DrSciCortex/SteamVRRoleFix">SteamVRRoleFix</a>, a plugin for Resonite's renderer (the installer adds it with Gale or without). Without it, Resonite sometimes keeps reading the controllers you put down: your hands freeze and nothing you press arrives, although SteamVR's own menu still opens.</li>
+        <li><a href="https://github.com/DrSciCortex/CyberFingerMod">CyberFingerMod</a> 1.10 or later, a ResoniteModLoader mod. Leave its <b>FollowActiveController</b> setting on (the default). Without it, after switching back you can still use tools, but you can't move, turn or jump. With the CyberFinger driver, turn its <b>GamepadBindings</b> setting off; the installer does, when the mod has no settings yet.</li>
+      </ul>
+      <p>For switches that happen only when you mean them, turn off the Quest's automatic switching between hands and controllers, and choose hand tracking in its quick settings. With automatic switching on, a controller that moves on the table switches the Quest back to the controllers.</p>
+    </section>
+
+    <section id="fluxactions">
+      <h2>ProtoFlux actions</h2>
+      <img class="mod-icon" src="images/morefluxactions_icon.png" width="256" height="256" alt="The MoreFluxActions icon: a burst of rainbow-coloured petals.">
+      <p>The <a href="https://github.com/DrSciCortex/MoreFluxActionsMod">MoreFluxActions</a> mod for Resonite adds 42 extra actions, Flux Action 1 to 42, that you can bind to buttons in SteamVR. Each press and release reaches ProtoFlux on your avatar, so a button can do anything you build. Without the mod, holding the black button does nothing.</p>
+      <ol class="steps">
+        <li><div><b>Install the mod.</b> The CyberFinger Bridge installer installs it into your Gale profiles: see <a href="#resonite-mods">Installing the Resonite mods</a>. The mod has a part for the game and a part for Resonite's renderer, which reads SteamVR's buttons.</div></li>
+        <li><div><b>Bind more actions, if you like.</b> The CyberFinger defaults already use some, left then right: the black button's hold is 1 and 2, C, D and E are 3 to 8, the two-finger point is 36 and 37, the thumb-pinky pinch is 38 and 39, and pointing is 40 and 41. The right pink button can be one too (see <a href="#mic">Microphone</a>). To change them, open SteamVR's controller bindings while Resonite runs and switch to the <b>Flux Actions</b> tab: it lists all 42, for any button of any controller.</div></li>
+        <li><div><b>React in ProtoFlux.</b> Put dynamic impulse receivers anywhere under your avatar, with these tags (the number is the action's):</div></li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tag</th><th>Receiver</th><th>When</th></tr></thead>
+          <tbody>
+            <tr><td><code>FluxAction1.Pressed</code></td><td>Dynamic Impulse Receiver</td><td>the button goes down</td></tr>
+            <tr><td><code>FluxAction1.Released</code></td><td>Dynamic Impulse Receiver</td><td>the button goes up</td></tr>
+            <tr><td><code>FluxAction1</code></td><td>Dynamic Impulse Receiver With Value, bool</td><td>both: true on press, false on release</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The impulses run on your own client, as dynamic impulses do. Whatever your ProtoFlux changes is seen by everyone as usual.</p>
+    </section>
+
+    <section id="vrchat">
+      <h2>VRChat</h2>
+      <p>CyberFinger's default bindings for VRChat load on their own.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Control</th><th>In VRChat</th></tr></thead>
+          <tbody>
+            <tr><td><span class="dot">2</span> Trigger</td><td>Use and interact</td></tr>
+            <tr><td><span class="dot">3</span> Grab</td><td>Grab. A quick tap holds on until you press again.</td></tr>
+            <tr><td><span class="dot">1</span> Joystick</td><td>Move (left) and turn (right); push to jump</td></tr>
+            <tr><td><span class="dot">4</span> Menu</td><td>Action menu</td></tr>
+            <tr><td><span class="dot">6</span> Black button</td><td>Quick menu on the left, main menu on the right (when you let go)</td></tr>
+            <tr><td><span class="dot">6</span> Black button, held</td><td>Hand gestures on or off on the left, Safe Mode on the right</td></tr>
+            <tr><td><span class="dot">5</span> C, D, E</td><td>Free, to bind yourself</td></tr>
+            <tr><td><span class="dot">8</span> Pink button</td><td>Left: SteamVR dashboard. Right: mute (see <a href="#mic">Microphone</a>).</td></tr>
+            <tr><td>Your fingers</td><td>Shown on your avatar, from the headset's hand tracking</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Suggested VRChat settings</h3>
+      <p>VRChat's hand-tracking gestures read the same fingers CyberFinger passes on from the headset, so they react to your hands while you play with the buttons. These settings keep the two apart:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Set to</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Microphone Behaviour</strong><br>Main Menu &gt; Audio &amp; Voice &gt; Microphone</td><td class="default">Toggle</td><td>The right pink button sends one short press. With <b>Push to Talk</b>, your microphone would only be open for that moment.</td></tr>
+            <tr><td><strong>Finger walking</strong> (moving with a thumb and middle finger pinch)<br>Main Menu &gt; Tracking &amp; IK &gt; Finger Tracking</td><td class="default">off</td><td>You move with the stick. On, a pinch walks you around.</td></tr>
+            <tr><td><strong>Jump Gesture</strong><br>Main Menu &gt; Tracking &amp; IK &gt; Finger Tracking</td><td class="default">off</td><td>You jump by pushing the stick. On, a hand pose makes you jump.</td></tr>
+            <tr><td><strong>One Handed Movement [VR]</strong><br>Main Menu &gt; User Interface &gt; General UI Settings</td><td class="default">off</td><td>Keeps moving on the left stick and turning on the right, as the CyberFinger bindings lay them out.</td></tr>
+            <tr><td><strong>Avatars Use Finger Tracking</strong><br>Main Menu &gt; Controls &gt; SteamVR</td><td class="default">on</td><td>Your avatar's fingers follow yours.</td></tr>
+            <tr><td><strong>Finger Tracking Exclusive Mode</strong><br>Main Menu &gt; Controls &gt; SteamVR</td><td class="default">off</td><td>On, VRChat ignores the inputs of SteamVR drivers while hand tracking is active, and CyberFinger's buttons could go dead.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>To switch all of VRChat's hand gestures off at once, set CyberFinger's <b>Skeletal tracking level</b> to <b>Partial</b> (see <a href="#settings">Settings</a>). To change a binding, open SteamVR's controller bindings while VRChat is running and edit the CyberFinger defaults for VRChat.</p>
+    </section>
+
+    <section id="dashboard">
+      <h2>SteamVR dashboard</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Control</th><th>In the dashboard</th></tr></thead>
+          <tbody>
+            <tr><td><span class="dot">8</span> Left pink button</td><td>Open and close the dashboard</td></tr>
+            <tr><td><span class="dot">2</span> Trigger</td><td>Click. A light press first holds the laser still, so the click lands where it points.</td></tr>
+            <tr><td><span class="dot">3</span> Grab</td><td>Right click</td></tr>
+            <tr><td><span class="dot">1</span> Joystick</td><td>Scroll; push for a middle click</td></tr>
+            <tr><td><span class="dot">4</span> Menu</td><td>Back</td></tr>
+            <tr><td><span class="dot">6</span> Black button</td><td>Home</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="mic">
+      <h2>Microphone and vibration</h2>
+      <h3>Microphone on/off</h3>
+      <p>Press the right CyberFinger's pink button to mute your microphone in the game, and press it again to unmute. The game's microphone icon shows the state. The bridge must be running in VR Mode, with <b>Right pink button</b> on <b>SteamVR</b> (the default), which leaves the button to the game. In VRChat it is VRChat's mute, with VRChat's <b>Microphone Behaviour</b> on <b>Toggle</b> (see <a href="#vrchat">VRChat</a>). In Resonite, which has no mute of its own for controllers, it presses FluxAction42, which the MoreFluxActions mod turns into Resonite's mute, like the dash's mute button. That's its <b>MuteToggleAction</b> setting, 42 by default; set it to 0 in your mod manager's config editor if you'd rather use FluxAction42 for something else.</p>
+      <p>To mute every app at once instead, Discord included, set <b>Right pink button</b> to <b>mic mute</b>. It mutes Windows' default microphone (SteamVR can make the headset's microphone the Windows default), and the CyberFinger confirms on its motor. Games then don't show you as muted: they just hear silence.</p>
+      <p>To use the button in Resonite for something else, set <b>Right pink button</b> to <b>FluxAction</b> at the top of CyberFinger Bridge and pick a number from 1 to 42 (42 at first). The button then presses and releases that <a href="#fluxactions">Flux Action</a>, without vibrating, and leaves the microphone alone. Only the microphone toggle confirms on the motor. The bridge remembers the choice.</p>
+      <h3>Vibration</h3>
+      <p>CyberFingers with a vibration motor (some hardware revisions have one) buzz when an app asks for it, for example when you touch a button or grab something. The CyberFinger also confirms the microphone button:</p>
+      <div class="patterns">
+        <div class="pattern">
+          <svg viewBox="0 0 240 34" aria-hidden="true"><line class="axis" x1="0" y1="30" x2="240" y2="30"/><rect class="on" x="4" y="8" width="42" height="22" rx="3"/><rect class="on" x="88" y="8" width="42" height="22" rx="3"/><rect class="on" x="172" y="8" width="42" height="22" rx="3"/></svg>
+          <p><b>Three quick pulses:</b> microphone muted</p>
+        </div>
+        <div class="pattern">
+          <svg viewBox="0 0 240 34" aria-hidden="true"><line class="axis" x1="0" y1="30" x2="240" y2="30"/><rect class="on" x="4" y="8" width="100" height="22" rx="3"/></svg>
+          <p><b>One buzz:</b> microphone live</p>
+        </div>
+      </div>
+      <p>To test the motor, click the <b>HAPTIC</b> strip at the bottom of a hand panel in CyberFinger Bridge (VR Mode). That CyberFinger buzzes briefly.</p>
+    </section>
+
+    <section id="power">
+      <h2>Power and charging</h2>
+      <ul>
+        <li><strong>Switch on:</strong> press the pink button.</li>
+        <li><strong>Switch off:</strong> hold the pink button for about 5–7 seconds. After a moment the CyberFinger shows a power-off notice; keep holding and its screen goes dark: it's off. Let go before that to cancel.</li>
+        <li><strong>Short press or hold:</strong> a short press is the button's job in VR (dashboard or microphone). Only a hold starts the power-off.</li>
+        <li><strong>Charging:</strong> through the USB-C port. The CyberFinger charges and works at the same time, so you can keep playing with it plugged into a cable or an external battery (a power bank). The battery level shows in the bridge's hand panels and in SteamVR.</li>
+      </ul>
+    </section>
+
+    <section id="settings">
+      <h2>Settings</h2>
+      <p>Open SteamVR's settings and choose <b>CyberFinger</b> in the list on the left. Some settings only appear with <b>Advanced Settings: Show</b> (bottom left). Settings marked <span class="tag">live</span> take effect at once; <span class="tag">after restart</span> ones when SteamVR next starts. The pages below go top to bottom.</p>
+      <figure class="shot settings">
+        <img src="images/steamvr_settings1.png" width="1190" height="940" alt="SteamVR settings, CyberFinger page, top: controllers active, headset hand tracking, the Quest palm pinch, the black button long press, and the pose filter." style="width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid var(--line);">
+        <figcaption>The top of the CyberFinger page.</figcaption>
+      </figure>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><strong>CyberFinger controllers active</strong><span class="tag">live</span></td><td class="default">on</td><td>The main switch. Off, the driver lets go of the hands and the headset's own hand tracking drives them, as if CyberFinger weren't installed: to compare, or to play without the CyberFingers.</td></tr>
+            <tr><td><strong>Use headset hand tracking for fingers</strong><span class="tag">after restart</span></td><td class="default">on</td><td>CyberFinger takes the fingers and the hand's pose from the headset's hand tracking (Steam Link or Virtual Desktop). Leave it on. Off is for troubleshooting only: the fingers then follow the CyberFinger's buttons, and the hand is turned by the fallback rotation on the last page.</td></tr>
+            <tr><td><strong>Quest left palm pinch also opens the dashboard</strong><span class="tag">live</span></td><td class="default">off</td><td>The Quest opens the SteamVR dashboard when you pinch with the left palm facing you. It fired too easily, so the left pink button does it instead. On: both open it.</td></tr>
+            <tr><td><strong>Black button long press (ms)</strong><span class="tag">after restart</span></td><td class="default">800 ms</td><td>Hold the black button this long and it becomes <b>A held</b> (in Resonite, FluxAction1 on the left and FluxAction2 on the right) instead of its usual job. A shorter press is the usual black button, sent as you let go. 0 turns the long press off: the button then acts as soon as you press it. Up to 2000 ms.</td></tr>
+            <tr><td><strong>Filter Steam Link's hand pose</strong><span class="tag">live</span></td><td class="default">on</td><td>Steam Link's hand positions tremble by a few millimetres. The filter steadies a still hand strongly and a moving one hardly at all, so it adds little delay. Virtual Desktop's hands are never filtered: they arrive smooth. Off: the pose as streamed.</td></tr>
+            <tr><td><strong>Pose filter: smoothing when still (Hz)</strong><span class="tag">live</span></td><td class="default">1.0</td><td>How much a still hand is steadied. Lower is calmer but slower to follow small movements; higher is more direct but shakier. From 0.1 to 5.</td></tr>
+            <tr><td><strong>Pose filter: responsiveness when moving</strong><span class="tag">live</span></td><td class="default">15</td><td>How quickly the filter lets go as the hand speeds up. Higher follows fast movements with less delay; lower keeps smoothing while you move. From 0 to 60.</td></tr>
+            <tr><td><strong>Pose prediction</strong><span class="tag">live</span></td><td class="default">0.5</td><td>The hand arrives a little late over the stream; SteamVR can move it ahead along its motion to make up for it. 0: no prediction, the hand trails slightly. 1: full, on time but overshooting when you stop. 0.5 is the balance. Up to 1.5.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="shot settings">
+        <img src="images/steamvr_settings2.png" width="1190" height="940" alt="SteamVR settings, CyberFinger page, middle: rotation prediction, glitch threshold, the CyberFinger's IMU, the hand-over to the Touch controllers, hiding the streamer's controllers, debug captures and the grab." style="width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid var(--line);">
+        <figcaption>Further down.</figcaption>
+      </figure>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Rotation prediction</strong><span class="tag">live</span></td><td class="default">0</td><td>The same for the hand's rotation. Above 0 a laser pointer from the hand jitters, since the beam magnifies every small turn. With the CyberFinger's back-of-hand sensor the rotation has no delay anyway.</td></tr>
+            <tr><td><strong>Pose filter: glitch threshold (cm)</strong><span class="tag">live</span><span class="tag">advanced</span></td><td class="default">5 cm</td><td>A hand that jumps further than it plausibly could is taken for a tracking glitch and held back. Raise it if quick movements get held back; lower it to catch smaller glitches. From 1 to 30 cm.</td></tr>
+            <tr><td><strong>Hand orientation from the CyberFinger's IMU</strong><span class="tag">live</span></td><td class="default">on</td><td>On CyberFingers with the back-of-hand sensor (the joint IMU), the hand's rotation comes from it: steadier than the headset's, without its delay, and it keeps turning while the headset can't see the hand. The headset keeps it lined up; the driver learns how the CyberFinger sits within a second or two and remembers it for next time. Off: rotation from the headset alone. No effect on CyberFingers without the sensor.</td></tr>
+            <tr><td><strong>Hand over to the Touch controllers</strong><span class="tag">live</span></td><td class="default">on</td><td>Pick up the Quest's Touch controllers and, about half a second later, they get the hands; show your bare hands again and CyberFinger takes them back. Off: CyberFinger keeps the hands even while you hold controllers.</td></tr>
+            <tr><td><strong>Hide the streamer's emulated Touch controllers</strong><span class="tag">live</span><span class="tag">advanced</span></td><td class="default">on</td><td>Steam Link and Virtual Desktop also present your tracked hands to apps as Touch controllers. While CyberFinger holds the hands, those are marked not tracked, so apps don't show them as extra controllers or pick them instead of CyberFinger. Undone when CyberFinger is switched off.</td></tr>
+            <tr><td><strong>Debug captures</strong><span class="tag">live</span><span class="tag">advanced</span></td><td class="default">off</td><td>Lets the developer tool <code>tools/analyze_tap_capture.py</code> record the hand data for analysis. Leave it off unless you're asked for a capture.</td></tr>
+            <tr><td><strong>Grab: tap to hold</strong><span class="tag">live</span></td><td class="default">on</td><td>A quick tap of Grab keeps holding what you grabbed until the next press, so you don't have to keep the button down; a longer press grabs only while held. Off: Grab always holds only while pressed.</td></tr>
+            <tr><td><strong>Grab: with tap to hold, a tap shorter than this (ms) holds</strong><span class="tag">after restart</span></td><td class="default">200 ms</td><td>How quick a tap must be to hold on. Raise it if holds don't catch; lower it if ordinary presses latch by mistake.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="shot settings">
+        <img src="images/steamvr_settings3.png" width="1190" height="940" alt="SteamVR settings, CyberFinger page, bottom: skeletal tracking level, the dashboard button, the fallback pose rotation, and Reset page to default." style="width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid var(--line);">
+        <figcaption>The bottom of the page.</figcaption>
+      </figure>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Skeletal tracking level</strong><span class="tag">after restart</span></td><td class="default">Full</td><td>What CyberFinger tells apps about its finger tracking. <b>Full</b>: camera-tracked fingers. <b>Partial</b>: VRChat then keeps its hand-gesture controls off, which otherwise react to your finger poses. Resonite ignores it.</td></tr>
+            <tr><td><strong>CyberFinger button for the SteamVR dashboard</strong><span class="tag">after restart</span></td><td class="default">None</td><td>Also open the SteamVR dashboard with C, D or E, besides the left pink button: for CyberFingers without a working pink button (older firmware), or if you'd rather.</td></tr>
+            <tr><td><strong>Fallback pose rotation X, Y, Z</strong><span class="tag">live</span><span class="tag">advanced</span></td><td class="default">−60, 35, 0</td><td>Only used when no hand skeleton has ever come from the headset (the hand-tracking option on the first page off): how the CyberFinger hand is turned relative to the headset's hand. Leave them.</td></tr>
+            <tr><td><strong>Reset page to default</strong></td><td class="default"></td><td>Puts every CyberFinger setting back to its default.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="trouble">
+      <h2>Troubleshooting</h2>
+      <dl class="faq">
+        <div><dt>The bridge finds no CyberFingers</dt><dd>Pair both CyberFingers in Windows Bluetooth, switch them on, and check that Windows shows them as connected. The bridge looks for names containing "left" and "right".</dd></div>
+        <div><dt>SteamVR shows no CyberFinger controllers</dt><dd>Check that CyberFinger is enabled under SteamVR's Settings › Startup / Shutdown › Manage Add-ons, and restart SteamVR after installing.</dd></div>
+        <div><dt>The buttons do nothing</dt><dd>The bridge must be started in VR Mode (BLE→SteamVR). The hand panels show each button as you press it.</dd></div>
+        <div><dt>The pink buttons or the vibration do nothing</dt><dd>Both need CyberFinger firmware 1.3.3 or later, and vibration needs a CyberFinger with a motor (some hardware revisions only).</dd></div>
+        <div><dt>The hands jitter with Steam Link</dt><dd>Keep "Filter Steam Link's hand pose" on.</dd></div>
+        <div><dt>Resonite shows stiff hands or asks for a binding</dt><dd>In SteamVR's controller bindings for Resonite, choose the CyberFinger defaults.</dd></div>
+        <div><dt>A hand points the wrong way after you took the CyberFinger off</dt><dd>On CyberFingers with the joint IMU, it should sort itself out within a second or two of moving the hand in view. If it doesn't, tap the module on the back of that hand three times, firmly (a CyberFinger with a motor answers with two short pulses), or press <b>Resync IMU</b> in CyberFinger Bridge.</dd></div>
+        <div><dt>Holding the black button does nothing in Resonite</dt><dd>Install the MoreFluxActions mod (see <a href="#resonite-mods">Installing the Resonite mods</a>), and put a receiver tagged <code>FluxAction1.Pressed</code> (left) or <code>FluxAction2.Pressed</code> (right) under your avatar. The bridge's hand panel lights <b>HOLD</b> beside ST/SE when the hold is recognised.</dd></div>
+        <div><dt>After switching back from the Quest controllers, my hands freeze in Resonite</dt><dd>Install <a href="https://github.com/DrSciCortex/SteamVRRoleFix">SteamVRRoleFix</a> (see <a href="#resonite-mods">Installing the Resonite mods</a>), then restart Resonite. See <a href="#switching">Switching between CyberFinger and the Quest controllers</a>.</dd></div>
+        <div><dt>With the Quest controllers, X or A doesn't open Resonite's dash, and pressing X twice toggles UI edit mode</dt><dd>A button that was held at the switch is still held for Resonite. Update <a href="https://github.com/DrSciCortex/SteamVRRoleFix">SteamVRRoleFix</a> to 0.3 or later (the latest CyberFinger Bridge installer has it), then restart Resonite.</dd></div>
+        <div><dt>After switching back, tools work in Resonite but I can't move or jump</dt><dd>Install <a href="https://github.com/DrSciCortex/CyberFingerMod">CyberFingerMod</a> 1.10 or later, with FollowActiveController on.</dd></div>
+        <div><dt>Resonite starts without its mods</dt><dd>Started from Steam, SteamVR or a shortcut, a Resonite build loads its Gale profile's mods only once it is linked to the profile: run the CyberFinger Bridge installer again, or use <b>Start menu › CyberFinger Bridge › Link Resonite builds to Gale profiles</b>. Linking again also helps after updating BepisLoader in Gale, which can switch some of the mods off. To see what each build loads, open a command prompt in the <code>tools</code> folder where CyberFinger Bridge is installed (<code>C:\Program Files (x86)\CyberFinger Bridge\tools</code>, unless you chose another folder) and run <code>resonite_gale_link.cmd -Status</code>.</dd></div>
+        <div><dt>Resonite stops as it starts</dt><dd>If Resonite's log, in its <code>Logs</code> folder, says <code>An item with the same key has already been added. Key: ResoniteModLoader</code>, ResoniteModLoader is loaded twice: by ResoniteModLoaderLoader in your Gale profile, and by a <code>-LoadAssembly Libraries/ResoniteModLoader.dll</code> in how Resonite starts. Take that out of Resonite's launch options in Steam and of any shortcut that starts Resonite (step 3 of <a href="#resonite-mods">Installing the Resonite mods</a>).</dd></div>
+        <div><dt>Is a mod causing trouble in Resonite?</dt><dd>Switch the mods off: in the same <code>tools</code> folder, run <code>resonite_gale_link.cmd -Game "&lt;the build's folder&gt;" -Mods Off</code> (<code>-Status</code> lists the folders). The build then starts without mods until <code>-Mods On</code>, except from Gale's <b>Launch</b>. To leave out only one mod, switch it off in Gale.</dd></div>
+        <div><dt>CyberFinger doesn't take over again after I put the controllers down</dt><dd>The headset is still in controller mode, and sends no hand tracking. Switch the controllers off, or put them where they can't move, or pick hand tracking in the Quest's quick settings.</dd></div>
+        <div><dt>Muting doesn't silence my app</dt><dd>The app records from a microphone other than the Windows default. Choose the default microphone in the app, or make the headset's microphone the Windows default.</dd></div>
+      </dl>
+    </section>
+  </main>
+
+  <footer>
+    <span>CyberFinger · SciCortex Technologies Corp.</span>
+    <span>Driver and bridge: <a href="https://github.com/SciCortex/CyberFinger_SteamVR">github.com/SciCortex/CyberFinger_SteamVR</a></span>
+    <span>MoreFluxActions icon: adapted from the <a href="https://wiki.resonite.com/Resonite_Logo">Resonite logo</a> (Resonite Wiki; Resonite © Yellow Dog Man Studios s.r.o.), <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</span>
+  </footer>
+</div>

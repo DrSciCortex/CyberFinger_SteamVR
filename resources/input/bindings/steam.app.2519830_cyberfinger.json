@@ -1,0 +1,410 @@
+{
+  "action_manifest_version": 0,
+  "alias_info": {},
+  "app_key": "steam.app.2519830",
+  "bindings": {
+    "/actions/generic": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "trigger",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actionprimary"
+            },
+            "pull": {
+              "output": "/actions/generic/in/strength"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actionsecondary"
+            },
+            "position": {
+              "output": "/actions/generic/in/axis"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/grab",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actiongrab"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actionmenu"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "trigger",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actionprimary"
+            },
+            "pull": {
+              "output": "/actions/generic/in/strength"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actionsecondary"
+            },
+            "position": {
+              "output": "/actions/generic/in/axis"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/grab",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actiongrab"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/generic/in/actionmenu"
+            }
+          }
+        }
+      ],
+      "poses": [
+        {
+          "path": "/user/hand/left/pose/raw",
+          "output": "/actions/generic/in/pose"
+        },
+        {
+          "path": "/user/hand/right/pose/raw",
+          "output": "/actions/generic/in/pose"
+        }
+      ],
+      "skeleton": [
+        {
+          "path": "/user/hand/left/input/skeleton/left",
+          "output": "/actions/generic/in/lefthand"
+        },
+        {
+          "path": "/user/hand/right/input/skeleton/right",
+          "output": "/actions/generic/in/righthand"
+        }
+      ],
+      "haptics": [
+        {
+          "path": "/user/hand/left/output/haptic",
+          "output": "/actions/generic/out/haptic"
+        },
+        {
+          "path": "/user/hand/right/output/haptic",
+          "output": "/actions/generic/out/haptic"
+        }
+      ]
+    },
+    "/actions/oculustouch": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "trigger",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/trigger_click"
+            },
+            "pull": {
+              "output": "/actions/oculustouch/in/trigger"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/joystick_click"
+            },
+            "position": {
+              "output": "/actions/oculustouch/in/joystick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/grab",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/grip_click"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/button_xa"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/button_yb"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "trigger",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/trigger_click"
+            },
+            "pull": {
+              "output": "/actions/oculustouch/in/trigger"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/joystick_click"
+            },
+            "position": {
+              "output": "/actions/oculustouch/in/joystick"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/grab",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/grip_click"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/button_xa"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/oculustouch/in/button_yb"
+            }
+          }
+        }
+      ],
+      "poses": [
+        {
+          "path": "/user/hand/left/pose/raw",
+          "output": "/actions/oculustouch/in/pose"
+        },
+        {
+          "path": "/user/hand/right/pose/raw",
+          "output": "/actions/oculustouch/in/pose"
+        }
+      ],
+      "skeleton": [
+        {
+          "path": "/user/hand/left/input/skeleton/left",
+          "output": "/actions/oculustouch/in/left_hand"
+        },
+        {
+          "path": "/user/hand/right/input/skeleton/right",
+          "output": "/actions/oculustouch/in/right_hand"
+        }
+      ],
+      "haptics": [
+        {
+          "path": "/user/hand/left/output/haptic",
+          "output": "/actions/oculustouch/out/haptic"
+        },
+        {
+          "path": "/user/hand/right/output/haptic",
+          "output": "/actions/oculustouch/out/haptic"
+        }
+      ]
+    },
+    "/actions/fluxactions": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/a_hold",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction1"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/a_hold",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction2"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/c",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction3"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/c",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction4"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/d",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction5"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/d",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction6"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/e",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction7"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/e",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction8"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/two_finger_point",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction36"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/two_finger_point",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction37"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/pinky_pinch",
+          "mode": "trigger",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction38"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/pinky_pinch",
+          "mode": "trigger",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction39"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/index_point",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction40"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/index_point",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction41"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/pink",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/fluxactions/in/fluxaction42"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "category": "steamvr_input",
+  "controller_type": "cyberfinger",
+  "description": "Emulates an Oculus Touch controller: Resonite's Touch mode, the one with a dash button. Black button (Start/Select): dash. MENU: context menu. Left pink button: SteamVR dashboard. Grab: a quick tap of the grip holds until the next press, a longer press grabs while held. Precision grab is implemented in Resonite from the skeleton. Flux Actions (MoreFluxActions mod), left/right: black button held 1/2, C 3/4, D 5/6, E 7/8, two-finger point 36/37, pinky pinch 38/39, index point 40/41.",
+  "interaction_profile": "",
+  "name": "CyberFinger defaults for Resonite",
+  "options": {
+    "simulated_controller_type": "oculus_touch",
+    "simulate_rendermodel": "full"
+  },
+  "simulated_actions": []
+}

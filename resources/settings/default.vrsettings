@@ -1,0 +1,57 @@
+{
+    "driver_cyberfinger": {
+        "enable": true,
+        "active": true,
+        "loadPriority": 2000,
+
+        "serialNumber_left": "CYBERFINGER_L",
+        "serialNumber_right": "CYBERFINGER_R",
+
+        "handtracking_udp_port": 27015,
+        "context_udp_port": 27016,
+        "bind_loopback_only": true,
+
+        "skeletal_tracking_level": "full",
+        "hand_selection_priority": 1000,
+
+        "optical_tap": true,
+        "optical_tap_hook": true,
+        "tap_serial_left": "Hand_Left",
+        "tap_serial_right": "Hand_Right",
+        "tap_controller_types": "svl_hand_interaction_augmented|vd_hand_controller",
+        "forward_tap_system_button": false,
+        "black_hold_ms": 800,
+        "grab_tap_to_hold": true,
+        "grab_tap_ms": 200,
+        "passthrough_events": true,
+        "pose_filter": true,
+        "pose_filter_min_cutoff": 1.0,
+        "pose_filter_beta": 15.0,
+        "pose_prediction": 0.5,
+        "pose_rotation_prediction": 0.0,
+        "pose_filter_gate_cm": 5.0,
+        "pose_filter_types": "svl_hand_interaction_augmented",
+
+        "imu_fusion": true,
+
+        "hide_other_hand_controllers": true,
+        "yield_to_controllers": true,
+
+        "debug_captures": false,
+
+        "button_a": "STSEL",
+        "button_b": "MENU",
+        "button_system": "NONE",
+        "legacy_5bit_buttons": false,
+
+        "fused_timeout_ms": 150,
+        "disconnect_after_ms": 0,
+
+        "grip_angle_x": -60.0,
+        "grip_angle_y": 35.0,
+        "grip_angle_z": 0.0,
+        "pose_offset_x": 0.0,
+        "pose_offset_y": -0.10,
+        "pose_offset_z": 0.0
+    }
+}

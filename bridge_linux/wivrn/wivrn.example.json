@@ -1,0 +1,41 @@
+{
+    "active": true,
+    "profile": "touch",
+
+    "handtracking_udp_port": 27015,
+    "context_udp_port": 27016,
+    "bind_loopback_only": true,
+    "legacy_5bit_buttons": false,
+
+    "button_a": "STSEL",
+    "button_b": "MENU",
+    "button_menu": "PINK",
+    "button_system": "NONE",
+    "black_hold_ms": 800,
+    "grab_tap_to_hold": true,
+    "grab_tap_ms": 200,
+
+    "release_after_ms": 2000,
+    "occlusion_hold_ms": 2000,
+
+    "imu_fusion": true,
+    "pose_rotation_prediction": 0.0,
+
+    "grip_offset_m": [0.0, 0.0, 0.0],
+    "grip_angle_deg": [0.0, 0.0, 0.0],
+
+    "flux_port": 42042,
+    "flux_actions": {
+        "a_hold": 1,
+        "c": 3,
+        "d": 5,
+        "e": 7,
+        "two_finger_point": 36,
+        "pinky_pinch": 38,
+        "index_point": 40,
+        "pink_right": 42
+    },
+
+    "status_log": true,
+    "gesture_log": false
+}

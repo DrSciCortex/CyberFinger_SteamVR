@@ -1,0 +1,167 @@
+# SPDX-FileCopyrightText: 2026 DrSciCortex
+#
+# SPDX-License-Identifier: GPL-3.0-only
+
+# WiVRn's server with the CyberFinger driver, and its dashboard with the driver's settings, as packages that
+# replace the AUR's wivrn-server and wivrn-dashboard:
+#
+#   cd bridge_linux/wivrn && makepkg -si
+#
+# Same names, version and release as the AUR packages, so lib32-wivrn-server (which depends on exactly that
+# wivrn-server) stays as it is. The driver and its settings page are compiled from this checkout. Derived from the
+# AUR's wivrn-server PKGBUILD (Guillaume Meunier, Sapphire), without its 32-bit library.
+#
+# When the AUR moves to a newer WiVRn, an update puts the stock packages back: set pkgver here to match and build
+# again (wivrn-cyberfinger.patch may need refreshing against the new sources).
+pkgbase=wivrn-server
+pkgname=(
+	wivrn-server
+	wivrn-dashboard
+)
+pkgver=26.9
+pkgrel=1
+pkgdesc="A wireless Monado-based OpenXR runtime for standalone headsets (with the CyberFinger driver)."
+arch=(x86_64)
+url="https://github.com/WiVRn/WiVRn"
+license=("GPL-3.0-or-later")
+
+_depends_server=(
+	"avahi"
+	"boost-libs"
+	"cairo"
+	"ffmpeg"
+	"glib2"
+	"glibc"
+	"libarchive"
+	"libbsd"
+	"libgcc"
+	"libgl"
+	"libnotify"
+	"libpipewire"
+	"libpng"
+	"librsvg"
+	"libstdc++"
+	"libx11"
+	"libxcb"
+	"openssl"
+	"systemd-libs"
+	"vulkan-icd-loader"
+	"x264"
+)
+
+_depends_dashboard=(
+	"boost-libs"
+	"glibc"
+	"hicolor-icon-theme"
+	"kcoreaddons"
+	"ki18n"
+	"kiconthemes"
+	"kirigami"
+	"kirigami-addons"
+	"libgcc"
+	"libstdc++"
+	"polkit"
+	"qcoro"
+	"qqc2-desktop-style"
+	"qt6-base"
+	"qt6-declarative"
+)
+
+depends=(${_depends_server[@]} ${_depends_dashboard[@]})
+
+makedepends=(
+	# Shared
+	"boost"
+	"cmake"
+	"git"
+	"glib2-devel"
+	"ninja"
+	"nlohmann-json"
+	"vulkan-headers"
+
+	# Server
+	"cli11"
+	"eigen"
+	"libdrm"
+	"libxrandr"
+
+	# Dashboard
+	"extra-cmake-modules"
+	"qt6-tools"
+)
+source=(
+	"wivrn-server-$pkgver.tar.gz::https://github.com/WiVRn/WiVRn/archive/refs/tags/v$pkgver.tar.gz"
+	"wivrn-cyberfinger.patch"
+)
+sha256sums=('89f63bc6c89943f3571055381ee2f1aa744d3d11372c56188b21e39c8d8ef733'
+            'SKIP')
+
+prepare() {
+	cd "WiVRn-$pkgver"
+	patch -p1 < "$srcdir/wivrn-cyberfinger.patch"
+}
+
+build() {
+	cd "WiVRn-$pkgver"
+	local _cyberfinger="$(realpath "$startdir/../..")"
+
+	cmake -B build-server . \
+	-G Ninja \
+	-DGIT_TAG=v${pkgver} \
+	-DWIVRN_BUILD_SERVER=ON \
+	-DWIVRN_BUILD_WIVRNCTL=ON \
+	-DWIVRN_BUILD_CLIENT=OFF \
+	-DWIVRN_BUILD_DASHBOARD=OFF \
+	-DWIVRN_OPENXR_MANIFEST_TYPE=relative \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+	-DCMAKE_INSTALL_PREFIX="/usr" \
+	-DWIVRN_USE_VAAPI=ON \
+	-DWIVRN_USE_X264=ON \
+	-DWIVRN_USE_NVENC=ON \
+	-DWIVRN_USE_VULKAN_ENCODE=ON \
+	-DOVR_COMPAT_SEARCH_PATH=/opt/xrizer:/opt/opencomposite:/opt/VapoR \
+	-DWIVRN_FEATURE_STEAMVR_LIGHTHOUSE=ON \
+	-DWIVRN_CYBERFINGER_DIR="$_cyberfinger" \
+	-Wno-dev
+
+	cmake -B build-dashboard . \
+	-G Ninja \
+	-DGIT_TAG=v${pkgver} \
+	-DWIVRN_BUILD_CLIENT=OFF \
+	-DWIVRN_BUILD_SERVER=OFF \
+	-DWIVRN_BUILD_WIVRNCTL=OFF \
+	-DWIVRN_BUILD_DASHBOARD=ON \
+	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+	-DCMAKE_INSTALL_PREFIX="/usr" \
+	-DOVR_COMPAT_SEARCH_PATH=/opt/xrizer:/opt/opencomposite:/opt/VapoR \
+	-DWIVRN_FEATURE_STEAMVR_LIGHTHOUSE=ON \
+	-DWIVRN_CYBERFINGER_DIR="$_cyberfinger" \
+	-Wno-dev
+
+	cmake --build build-server
+	cmake --build build-dashboard
+}
+
+package_wivrn-server() {
+	provides=("openxr-runtime")
+	depends=(${_depends_server[@]})
+	optdepends=(
+		"opencomposite: OpenVR to OpenXR translation layer"
+		"xrizer: Another OpenVR to OpenXR translation layer"
+		"vapor-openvr: Yet another OpenVR to OpenXR translation layer"
+	)
+
+	cd "WiVRn-$pkgver"
+	DESTDIR="$pkgdir" cmake --install build-server
+
+	mkdir -p $pkgdir/usr/lib/environment.d
+	echo PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 > $pkgdir/usr/lib/environment.d/wivrn.conf
+}
+
+package_wivrn-dashboard() {
+	pkgdesc="The WiVRn dashboard (with the CyberFinger driver's settings)."
+	depends=(${_depends_dashboard[@]} "wivrn-server=${pkgver}-${pkgrel}")
+
+	cd "WiVRn-$pkgver"
+	DESTDIR="$pkgdir" cmake --install build-dashboard
+}

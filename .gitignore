@@ -1,0 +1,62 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# debug information files
+*.dwo
+
+# Render-model meshes are sources, not object files
+!resources/rendermodels/**/*.obj
+
+# Build trees and Python caches
+out/
+build/
+__pycache__/
+
+# Bridge build outputs (bridge/build.bat)
+bridge/dist/
+bridge/assets/icon.ico
+
+# Resonite mods staged for the installer (tools/stage_resonite_mods.py)
+bridge/installer/resonite_mods/
+
+# makepkg's leftovers (bridge_linux/wivrn/PKGBUILD)
+bridge_linux/wivrn/src/
+bridge_linux/wivrn/pkg/
+bridge_linux/wivrn/*.pkg.tar.zst
+bridge_linux/wivrn/*.tar.gz
