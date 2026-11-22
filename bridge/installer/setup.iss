@@ -28,7 +28,9 @@
 #endif
 
 [Setup]
-AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+; CyberFinger Bridge's own id. Up to 2.2.5 it was a template placeholder ({A1B2C3D4-...}); setup removes such an
+; install first (see LegacyAppKey).
+AppId={{6F55D1B7-5BEC-42C7-BDA8-01144FD1CF7B}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -1086,6 +1088,80 @@ begin
   end;
 end;
 
+// ── Installs under the old AppId ───────────────────────────────────────────
+// Up to 2.2.5 the AppId was a template placeholder, which other programs may share. Setup doesn't see such an
+// install as its own (it would add a second one beside it), so it removes it first: only an entry named
+// CyberFinger Bridge, and only once the user has clicked Install (PrepareToInstall). Its folder is kept as the
+// default install folder.
+const
+  LegacyAppKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1';
+
+function FindLegacyInstall(var Uninstaller, Location: String): Boolean;
+var
+  Roots: array[0..2] of Integer;
+  I: Integer;
+  Name: String;
+begin
+  Result := False;
+  Roots[0] := HKLM32;
+  Roots[1] := HKLM64;
+  Roots[2] := HKCU;
+  for I := 0 to 2 do
+  begin
+    if ((Roots[I] = HKLM64) and not IsWin64) or not RegQueryStringValue(Roots[I], LegacyAppKey, 'DisplayName', Name) then
+      Continue;
+    if Pos('{#MyAppName}', Name) <> 1 then
+    begin
+      Log('Old AppId entry belongs to another program: ' + Name);
+      Continue;
+    end;
+    if not RegQueryStringValue(Roots[I], LegacyAppKey, 'UninstallString', Uninstaller) then
+      Continue;
+    Uninstaller := RemoveQuotes(Uninstaller);
+    if not RegQueryStringValue(Roots[I], LegacyAppKey, 'InstallLocation', Location) then
+      Location := '';
+    Result := True;
+    Exit;
+  end;
+end;
+
+function RemoveLegacyInstall(): String;
+var
+  Uninstaller, Location: String;
+  Code, Tries: Integer;
+begin
+  Result := '';
+  if not FindLegacyInstall(Uninstaller, Location) then
+    Exit;
+  // Its uninstaller undoes the Resonite links and mod copies: Resonite must be closed for that.
+  if not WaitForResoniteClosed() then
+  begin
+    Result := 'Resonite must be closed to replace the earlier CyberFinger Bridge.';
+    Exit;
+  end;
+  Log('Removing the earlier CyberFinger Bridge: ' + Uninstaller);
+  if not FileExists(Uninstaller) or
+     not Exec(Uninstaller, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Code := -1;
+  // The uninstaller finishes from a copy of itself: wait for its entry to go.
+  Tries := 0;
+  while FindLegacyInstall(Uninstaller, Location) and (Tries < 60) do
+  begin
+    Sleep(500);
+    Tries := Tries + 1;
+  end;
+  if FindLegacyInstall(Uninstaller, Location) then
+    Result := 'The earlier CyberFinger Bridge could not be removed (exit code ' + IntToStr(Code) + '). Please ' +
+              'uninstall it from Windows Settings > Apps, then run this setup again.'
+  else
+    Log('Earlier CyberFinger Bridge removed');
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := RemoveLegacyInstall();
+end;
+
 function InitializeSetup(): Boolean;
 begin
   Result := WaitForSteamVRClosed();
@@ -1170,8 +1246,11 @@ end;
 procedure InitializeWizard();
 var
   I, After: Integer;
-  RmlWhere: String;
+  RmlWhere, LegacyUninstaller, LegacyLocation: String;
 begin
+  // An install under the old AppId: install into its folder (it is removed first, in PrepareToInstall).
+  if FindLegacyInstall(LegacyUninstaller, LegacyLocation) and (LegacyLocation <> '') then
+    WizardForm.DirEdit.Text := RemoveBackslashUnlessRoot(LegacyLocation);
   After := wpSelectTasks;
   if AnyResonite() then
     After := CreateBuildsPage(wpSelectTasks);
