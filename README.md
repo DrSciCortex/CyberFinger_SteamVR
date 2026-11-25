@@ -4,6 +4,8 @@ A SteamVR driver that turns **two CyberFingers** into a pair of SteamVR hand con
 push-stick, trigger, grip and buttons, plus a full hand skeleton and pose from the headset's hand tracking
 (Quest via Steam Link).
 
+More details on the CyberFinger hardware can be found [here](https://scicortex.com/products/cyberfinger-v1-0-beta).
+
 Note: this is a *work-in-progress*, and currently alpha software.
 
 **Documentation:** [docs/README.md](docs/README.md) maps the pieces (CyberFingers, bridge, driver, the MoreFluxActions
